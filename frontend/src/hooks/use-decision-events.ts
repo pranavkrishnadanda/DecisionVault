@@ -25,8 +25,13 @@ export function useDecisionEvents(enabled: boolean): void {
 
   const onError = useCallback(
     (error: Error) => {
-      if (error instanceof ApiError && error.status === 401) {
-        clearSessionToken();
+      if (error instanceof ApiError) {
+        if (error.status === 401) {
+          clearSessionToken();
+          return;
+        }
+
+        // Stream endpoint failures should degrade silently without UI crashes.
         return;
       }
 

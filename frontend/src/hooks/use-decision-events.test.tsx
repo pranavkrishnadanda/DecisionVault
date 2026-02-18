@@ -94,4 +94,26 @@ describe("useDecisionEvents", () => {
       expect(useAuthStore.getState().sessionToken).toBeNull();
     });
   });
+
+  it("keeps session for non-auth stream api errors", async () => {
+    useAuthStore.setState({ sessionToken: "active-token" });
+
+    const queryClient = new QueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    mockSubscribeToDecisionEvents.mockImplementation(
+      (input: { onError: (error: Error) => void }) => {
+        input.onError(new ApiError("Upstream failure", 503, "req-1"));
+        return () => undefined;
+      },
+    );
+
+    renderHook(() => useDecisionEvents(true), { wrapper });
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().sessionToken).toBe("active-token");
+    });
+  });
 });
