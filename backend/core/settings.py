@@ -42,6 +42,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # Third-party apps
+    "rest_framework",
     # DecisionVault modules
     "api",
     "ingestion",
@@ -79,6 +81,19 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "core.wsgi.application"
+
+# Django REST Framework configuration
+REST_FRAMEWORK = {
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+    ],
+    "DEFAULT_AUTHENTICATION_CLASSES": [],  # No auth for MVP v1
+    "DEFAULT_PERMISSION_CLASSES": [],
+    "EXCEPTION_HANDLER": "rest_framework.views.exception_handler",
+}
 
 
 # Database

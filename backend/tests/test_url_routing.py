@@ -24,7 +24,7 @@ class TestHealthEndpoint:
         - Monitoring systems
         """
         url = reverse("api:health")
-        assert url == "/api/health/"
+        assert url == "/api/v1/health/"
 
     def test_health_endpoint_returns_200(self, client):
         """
@@ -32,7 +32,7 @@ class TestHealthEndpoint:
         
         Response should be JSON with status information.
         """
-        response = client.get("/api/health/")
+        response = client.get("/api/v1/health/")
         assert response.status_code == 200
         assert response["Content-Type"] == "application/json"
 
@@ -40,7 +40,7 @@ class TestHealthEndpoint:
         """
         Health endpoint should return status: ok.
         """
-        response = client.get("/api/health/")
+        response = client.get("/api/v1/health/")
         data = response.json()
         assert data["status"] == "ok"
 
@@ -48,7 +48,7 @@ class TestHealthEndpoint:
         """
         Health endpoint should include version information.
         """
-        response = client.get("/api/health/")
+        response = client.get("/api/v1/health/")
         data = response.json()
         assert "version" in data
 
@@ -60,8 +60,8 @@ class TestModuleURLs:
         """
         API URLs should be included in root URLconf.
         """
-        # Verify /api/ prefix resolves
-        match = resolve("/api/health/")
+        # Verify /api/v1/ prefix resolves
+        match = resolve("/api/v1/health/")
         assert match.url_name == "health"
 
     def test_ingestion_base_endpoint_exists(self):
