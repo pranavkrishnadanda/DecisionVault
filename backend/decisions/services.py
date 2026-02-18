@@ -7,24 +7,31 @@ Business logic for:
 - Decision state transitions
 """
 
-import os
 import json
-import pika
-from typing import Optional, Dict, Any
-from django.utils import timezone
-from django.db import transaction
+import logging
+import os
+from typing import Optional
 
-from decisions.models import Decision, DecisionStatus, AuditLog, AuditAction
+import pika
+from django.db import transaction
+from django.utils import timezone
+
+from core.constants import DECISION_TASKS_QUEUE
+from decisions.models import AuditAction, AuditLog, Decision, DecisionStatus
+
+logger = logging.getLogger(__name__)
 
 
 class AuditLogService:
     """Service for creating audit log entries."""
-    
+
     @staticmethod
-    def log_create(decision: Decision, actor_type: str = "api", actor_id: Optional[str] = None):
+    def log_create(
+        decision: Decision, actor_type: str = "api", actor_id: Optional[str] = None
+    ):
         """
         Log decision creation.
-        
+
         Args:
             decision: The decision that was created
             actor_type: Type of actor (e.g., "api", "user", "system")
@@ -42,19 +49,19 @@ class AuditLogService:
                 "title": decision.title,
                 "priority": decision.priority,
             },
-            metadata={"source": "api"}
+            metadata={"source": "api"},
         )
-    
+
     @staticmethod
     def log_submit(
         decision: Decision,
         previous_status: str,
         actor_type: str = "api",
-        actor_id: Optional[str] = None
+        actor_id: Optional[str] = None,
     ):
         """
         Log decision submission.
-        
+
         Args:
             decision: The decision that was submitted
             previous_status: Status before submission
@@ -70,21 +77,23 @@ class AuditLogService:
             previous_state={"status": previous_status},
             current_state={
                 "status": decision.status,
-                "workflow_started_at": str(decision.workflow_started_at) if decision.workflow_started_at else None,
+                "workflow_started_at": str(decision.workflow_started_at)
+                if decision.workflow_started_at
+                else None,
             },
-            metadata={"source": "api"}
+            metadata={"source": "api"},
         )
 
 
 class RabbitMQService:
     """Service for publishing messages to RabbitMQ."""
-    
-    QUEUE_NAME = "decision_queue"
-    
+
+    QUEUE_NAME = DECISION_TASKS_QUEUE
+
     def __init__(self, host: Optional[str] = None, port: Optional[int] = None):
         """
         Initialize RabbitMQ connection.
-        
+
         Args:
             host: RabbitMQ host (defaults to RABBITMQ_HOST env var)
             port: RabbitMQ port (defaults to RABBITMQ_PORT env var)
@@ -93,7 +102,7 @@ class RabbitMQService:
         self.port = port or int(os.getenv("RABBITMQ_PORT", "5672"))
         self._connection = None
         self._channel = None
-    
+
     @property
     def connection(self):
         """Lazy connection initialization."""
@@ -106,11 +115,14 @@ class RabbitMQService:
                     )
                 )
             except pika.exceptions.AMQPConnectionError:
-                # In test environment, we might not have RabbitMQ running
-                # Return None to allow tests to pass with mocked service
+                logger.exception(
+                    "RabbitMQ connection failed for host=%s port=%s",
+                    self.host,
+                    self.port,
+                )
                 return None
         return self._connection
-    
+
     @property
     def channel(self):
         """Lazy channel initialization."""
@@ -122,20 +134,20 @@ class RabbitMQService:
                     durable=True,
                 )
         return self._channel
-    
+
     def publish(self, decision_id: str) -> bool:
         """
         Publish decision processing message to queue.
-        
+
         Args:
             decision_id: UUID of the decision to process
-            
+
         Returns:
             True if message was published, False if RabbitMQ unavailable
         """
         if not self.channel:
             return False
-        
+
         message = {
             "message_id": str(timezone.now().timestamp()),
             "correlation_id": f"decision_{decision_id}",
@@ -144,11 +156,9 @@ class RabbitMQService:
             "payload": {
                 "decision_id": str(decision_id),
             },
-            "routing": {
-                "expiration": 3600
-            }
+            "routing": {"expiration": 3600},
         }
-        
+
         self.channel.basic_publish(
             exchange="",
             routing_key=self.QUEUE_NAME,
@@ -158,7 +168,7 @@ class RabbitMQService:
             ),
         )
         return True
-    
+
     def close(self):
         """Close RabbitMQ connection."""
         if self._channel and not self._channel.is_closed:
@@ -182,10 +192,10 @@ def get_rabbitmq_service() -> RabbitMQService:
 def publish_decision(decision_id: str) -> bool:
     """
     Publish decision to processing queue.
-    
+
     Args:
         decision_id: UUID of the decision
-        
+
     Returns:
         True if published successfully
     """
@@ -195,19 +205,19 @@ def publish_decision(decision_id: str) -> bool:
 
 class DecisionWorkflowService:
     """Service for decision workflow operations."""
-    
+
     @staticmethod
     @transaction.atomic
     def submit_decision(decision: Decision) -> bool:
         """
         Submit a decision for processing.
-        
+
         Args:
             decision: The decision to submit
-            
+
         Returns:
             True if submitted successfully
-            
+
         Raises:
             ValueError: If decision is not in DRAFT status
         """
@@ -216,23 +226,21 @@ class DecisionWorkflowService:
                 f"Cannot submit decision with status '{decision.status}'. "
                 f"Only 'draft' decisions can be submitted."
             )
-        
+
         # Store previous state for audit
         previous_status = decision.status
-        
+
         # Update decision state
         decision.status = DecisionStatus.PENDING
         decision.workflow_started_at = timezone.now()
         decision.save()
-        
+
         # Create audit log
         AuditLogService.log_submit(
-            decision=decision,
-            previous_status=previous_status,
-            actor_type="api"
+            decision=decision, previous_status=previous_status, actor_type="api"
         )
-        
+
         # Publish to queue
         published = publish_decision(str(decision.id))
-        
+
         return published
