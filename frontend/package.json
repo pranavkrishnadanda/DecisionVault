@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "typecheck": "tsgo --noEmit",
+    "dev:reset": "rm -rf .next/dev && next dev --turbopack",
+    "typecheck": "rm -rf .next/types .next/dev/types && tsgo --noEmit",
     "build": "bun run lint && bun run typecheck && next build --turbopack",
     "start": "next start",
     "test": "vitest run",

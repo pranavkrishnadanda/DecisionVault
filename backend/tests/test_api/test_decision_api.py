@@ -616,3 +616,17 @@ class TestListDecisions:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data) >= 2
+
+
+@pytest.mark.django_db
+class TestDecisionStream:
+    """Test GET /api/v1/decisions/stream/ endpoint."""
+
+    def test_stream_requires_authentication(self, anonymous_client):
+        response = anonymous_client.get("/api/v1/decisions/stream/")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_stream_returns_sse_for_authenticated_user(self, api_client):
+        response = api_client.get("/api/v1/decisions/stream/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response["Content-Type"] == "text/event-stream"

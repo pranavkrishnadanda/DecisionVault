@@ -1,22 +1,14 @@
 import { apiFetch } from "@/api/client";
+import {
+  type DecisionApiRecord,
+  mapDecisionApiRecord,
+} from "@/api/decision-contracts";
 import type { DecisionRecord } from "@/domain/decision";
 
-interface DecisionListItem {
-  id: string;
-  title: string;
-  status: DecisionRecord["status"];
-  updated_at: string;
-}
-
 export async function listDecisions(): Promise<DecisionRecord[]> {
-  const payload = await apiFetch<DecisionListItem[]>("/api/v1/decisions/", {
+  const payload = await apiFetch<DecisionApiRecord[]>("/api/v1/decisions/", {
     method: "GET",
   });
 
-  return payload.map((item) => ({
-    id: item.id,
-    workflowName: item.title,
-    status: item.status,
-    updatedAt: item.updated_at,
-  }));
+  return payload.map(mapDecisionApiRecord);
 }

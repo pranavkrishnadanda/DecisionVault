@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import { useDecisionEvents } from "@/hooks/use-decision-events";
 import { useDecisionsQuery } from "@/hooks/use-decisions-query";
 import { selectSessionToken, useAuthStore } from "@/state/auth-store";
 import { RetryPanel } from "@/ui/components/errors/retry-panel";
@@ -10,9 +11,12 @@ import { DecisionList } from "@/ui/features/decisions/decision-list";
 
 export function DecisionsPageClient() {
   const sessionToken = useAuthStore(selectSessionToken);
-  const { data, error, isError, isPending, refetch } = useDecisionsQuery(
-    Boolean(sessionToken),
-  );
+  const isAuthenticated = Boolean(sessionToken);
+
+  useDecisionEvents(isAuthenticated);
+
+  const { data, error, isError, isPending, refetch } =
+    useDecisionsQuery(isAuthenticated);
 
   const onRetry = useCallback(() => {
     void refetch();

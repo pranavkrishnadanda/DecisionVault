@@ -5,6 +5,7 @@ DRF ViewSets for DecisionVault.
 import uuid
 
 from django.db.models import Q
+from django.http import StreamingHttpResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import (
@@ -17,6 +18,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from decisions.models import Decision, DecisionStatus
+from decisions.realtime import decision_event_broker, event_stream_generator
 from decisions.serializers import DecisionSerializer, DecisionSubmitSerializer
 from decisions.services import AuditLogService, DecisionWorkflowService
 
@@ -33,6 +35,17 @@ class DecisionViewSet(viewsets.ViewSet):
 
     serializer_class = DecisionSerializer
     permission_classes = [IsAuthenticated]
+
+    @staticmethod
+    def _publish_decision_event(decision: Decision) -> None:
+        serialized = DecisionSerializer(decision).data
+        decision_event_broker.publish(
+            event_name="decision.upsert",
+            payload={
+                "type": "decision.upsert",
+                "decision": serialized,
+            },
+        )
 
     def list(self, request):
         """
@@ -54,6 +67,30 @@ class DecisionViewSet(viewsets.ViewSet):
 
         serializer = DecisionSerializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["get"], url_path="stream")
+    def stream(self, request):
+        """
+        Stream decision realtime updates over SSE.
+
+        Access policy:
+            - Authenticated users only
+        """
+        queue, unsubscribe = decision_event_broker.subscribe()
+
+        def event_stream():
+            try:
+                yield from event_stream_generator(queue)
+            finally:
+                unsubscribe()
+
+        response = StreamingHttpResponse(
+            streaming_content=event_stream(),
+            content_type="text/event-stream",
+        )
+        response["Cache-Control"] = "no-cache"
+        response["X-Accel-Buffering"] = "no"
+        return response
 
     @staticmethod
     def _resolve_decision(pk: str) -> Decision:
@@ -107,6 +144,7 @@ class DecisionViewSet(viewsets.ViewSet):
 
         # Return response
         output_serializer = DecisionSerializer(decision)
+        self._publish_decision_event(decision)
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, pk=None):
@@ -153,6 +191,8 @@ class DecisionViewSet(viewsets.ViewSet):
             raise ValidationError({"status": str(e)})
 
         # Return response
+        decision.refresh_from_db()
+        self._publish_decision_event(decision)
         return Response(
             {
                 "id": str(decision.id),
@@ -179,6 +219,8 @@ class DecisionViewSet(viewsets.ViewSet):
         except ValueError as e:
             raise ValidationError({"status": str(e)})
 
+        decision.refresh_from_db()
+        self._publish_decision_event(decision)
         return Response(
             {
                 "id": str(decision.id),

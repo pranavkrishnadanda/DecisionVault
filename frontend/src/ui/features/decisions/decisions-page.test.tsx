@@ -4,15 +4,20 @@ import { useAuthStore } from "@/state/auth-store";
 import { DecisionsPageClient } from "@/ui/features/decisions/decisions-page-client";
 
 const mockUseDecisionsQuery = vi.fn();
+const mockUseDecisionEvents = vi.fn();
 
 vi.mock("@/hooks/use-decisions-query", () => ({
   useDecisionsQuery: (...args: unknown[]) => mockUseDecisionsQuery(...args),
+}));
+vi.mock("@/hooks/use-decision-events", () => ({
+  useDecisionEvents: (...args: unknown[]) => mockUseDecisionEvents(...args),
 }));
 
 describe("decisions page", () => {
   beforeEach(() => {
     useAuthStore.setState({ sessionToken: "jwt-token" });
     mockUseDecisionsQuery.mockReset();
+    mockUseDecisionEvents.mockReset();
   });
 
   it("renders skeletons during loading", () => {
@@ -83,6 +88,7 @@ describe("decisions page", () => {
     render(<DecisionsPageClient />);
     expect(screen.getByText(/authentication required/i)).toBeInTheDocument();
     expect(mockUseDecisionsQuery).toHaveBeenCalledWith(false);
+    expect(mockUseDecisionEvents).toHaveBeenCalledWith(false);
   });
 
   it("virtualizes high-volume decision rows", () => {
@@ -106,5 +112,18 @@ describe("decisions page", () => {
     const renderedRows = screen.getAllByTestId("decision-row");
     expect(renderedRows.length).toBeGreaterThan(0);
     expect(renderedRows.length).toBeLessThan(decisions.length);
+  });
+
+  it("starts decision event stream only when authenticated", () => {
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+    expect(mockUseDecisionEvents).toHaveBeenCalledWith(true);
   });
 });
