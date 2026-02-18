@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "@/state/auth-store";
 import { DecisionsPageClient } from "@/ui/features/decisions/decisions-page-client";
+import { OperatorShell } from "@/ui/layout/operator-shell";
 
 const mockUseDecisionsQuery = vi.fn();
 const mockUseDecisionEvents = vi.fn();
@@ -32,6 +33,8 @@ describe("decisions page", () => {
     render(<DecisionsPageClient />);
 
     expect(screen.getByText(/decision operations/i)).toBeInTheDocument();
+    expect(screen.getByTestId("decisions-header-icon")).toBeInTheDocument();
+    expect(screen.getByTestId("decisions-live-indicator")).toBeInTheDocument();
     expect(screen.getByText(/live updates are active/i)).toBeInTheDocument();
     expect(
       screen.getByPlaceholderText(/search decisions/i),
@@ -168,5 +171,58 @@ describe("decisions page", () => {
     fireEvent.click(screen.getByRole("button", { name: /refresh decisions/i }));
 
     expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("filters rendered decisions by search input", () => {
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [
+        {
+          id: "d-1",
+          workflowName: "kyc-manual",
+          status: "draft",
+          updatedAt: "2026-02-18T00:00:00.000Z",
+        },
+        {
+          id: "d-2",
+          workflowName: "fraud-monitor",
+          status: "pending",
+          updatedAt: "2026-02-18T00:00:00.000Z",
+        },
+      ],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: /search decisions/i }),
+      {
+        target: { value: "fraud" },
+      },
+    );
+
+    expect(screen.getByText("d-2")).toBeInTheDocument();
+    expect(screen.queryByText("d-1")).not.toBeInTheDocument();
+  });
+
+  it("shows active sidebar accent strip on decisions nav item", () => {
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(
+      <OperatorShell>
+        <DecisionsPageClient />
+      </OperatorShell>,
+    );
+
+    expect(screen.getByTestId("sidebar-active-decisions")).toBeInTheDocument();
   });
 });

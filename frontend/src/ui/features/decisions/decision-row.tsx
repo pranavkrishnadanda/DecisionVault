@@ -10,7 +10,7 @@ interface DecisionRowProps {
 function DecisionRowBase({ decision, style }: DecisionRowProps) {
   return (
     <div
-      className="grid grid-cols-[1.2fr_1fr_0.8fr_1fr] gap-2 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
+      className="grid grid-cols-[1.2fr_1fr_0.8fr_1fr] gap-2 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition duration-150 hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-md"
       data-testid="decision-row"
       style={style}
     >
