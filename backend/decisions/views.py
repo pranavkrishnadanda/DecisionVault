@@ -2,10 +2,13 @@
 DRF ViewSets for DecisionVault.
 """
 
+import datetime as dt
 import uuid
 
 from django.db.models import Q
 from django.http import StreamingHttpResponse
+from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import (
@@ -57,16 +60,89 @@ class DecisionViewSet(viewsets.ViewSet):
         """
         user = request.user
         if user.is_staff or user.is_superuser:
-            queryset = Decision.objects.all().order_by("-created_at")
+            queryset = Decision.objects.all()
         else:
             user_id = str(user.id) if user.id is not None else ""
             username = user.get_username()
             queryset = Decision.objects.filter(
                 Q(created_by=user_id) | Q(created_by=username)
-            ).order_by("-created_at")
+            )
+
+        status_param = request.query_params.get("status")
+        if status_param:
+            statuses = [
+                item.strip() for item in status_param.split(",") if item.strip()
+            ]
+            valid_statuses = {choice for choice, _ in DecisionStatus.choices}
+            invalid_statuses = [
+                value for value in statuses if value not in valid_statuses
+            ]
+            if invalid_statuses:
+                raise ValidationError({"status": "Invalid status filter"})
+            queryset = queryset.filter(status__in=statuses)
+
+        query_param = request.query_params.get("q")
+        if query_param:
+            queryset = queryset.filter(
+                Q(title__icontains=query_param)
+                | Q(description__icontains=query_param)
+                | Q(created_by__icontains=query_param)
+            )
+
+        from_param = request.query_params.get("from")
+        if from_param:
+            from_dt = self._parse_filter_datetime(from_param, "from", end_of_day=False)
+            queryset = queryset.filter(updated_at__gte=from_dt)
+
+        to_param = request.query_params.get("to")
+        if to_param:
+            to_dt = self._parse_filter_datetime(to_param, "to", end_of_day=True)
+            queryset = queryset.filter(updated_at__lte=to_dt)
+
+        queryset = queryset.order_by("-updated_at", "-id")
+
+        limit_param = request.query_params.get("limit")
+        offset_param = request.query_params.get("offset", "0")
+
+        offset = self._parse_filter_int(offset_param, "offset")
+        if offset < 0:
+            raise ValidationError({"offset": "Offset must be >= 0"})
+
+        if limit_param is not None:
+            limit = self._parse_filter_int(limit_param, "limit")
+            if limit < 0:
+                raise ValidationError({"limit": "Limit must be >= 0"})
+            queryset = queryset[offset : offset + limit]
+        elif offset > 0:
+            queryset = queryset[offset:]
 
         serializer = DecisionSerializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @staticmethod
+    def _parse_filter_int(value: str, field_name: str) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            raise ValidationError({field_name: f"{field_name} must be an integer"})
+
+    @staticmethod
+    def _parse_filter_datetime(
+        value: str, field_name: str, end_of_day: bool
+    ) -> dt.datetime:
+        parsed_dt = parse_datetime(value)
+        if parsed_dt is not None:
+            if timezone.is_naive(parsed_dt):
+                return timezone.make_aware(parsed_dt)
+            return parsed_dt
+
+        parsed_date = parse_date(value)
+        if parsed_date is not None:
+            time_value = dt.time.max if end_of_day else dt.time.min
+            combined = dt.datetime.combine(parsed_date, time_value)
+            return timezone.make_aware(combined)
+
+        raise ValidationError({field_name: f"{field_name} must be an ISO datetime"})
 
     @action(detail=False, methods=["get"], url_path="stream")
     def stream(self, request):

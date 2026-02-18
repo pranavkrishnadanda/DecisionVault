@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "@/state/auth-store";
 import { DecisionsPageClient } from "@/ui/features/decisions/decisions-page-client";
 import { OperatorShell } from "@/ui/layout/operator-shell";
@@ -16,9 +16,15 @@ vi.mock("@/hooks/use-decision-events", () => ({
 
 describe("decisions page", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", "/decisions");
     useAuthStore.setState({ sessionToken: "jwt-token" });
     mockUseDecisionsQuery.mockReset();
     mockUseDecisionEvents.mockReset();
+    vi.useRealTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("renders skeletons during loading", () => {
@@ -100,7 +106,10 @@ describe("decisions page", () => {
 
     render(<DecisionsPageClient />);
     expect(screen.getByText(/authentication required/i)).toBeInTheDocument();
-    expect(mockUseDecisionsQuery).toHaveBeenCalledWith(false);
+    expect(mockUseDecisionsQuery).toHaveBeenCalledWith(
+      false,
+      expect.objectContaining({ limit: 100, offset: 0 }),
+    );
     expect(mockUseDecisionEvents).toHaveBeenCalledWith(false);
   });
 
@@ -173,22 +182,10 @@ describe("decisions page", () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
-  it("filters rendered decisions by search input", () => {
+  it("debounces search query before server filter refetch input", () => {
+    vi.useFakeTimers();
     mockUseDecisionsQuery.mockReturnValue({
-      data: [
-        {
-          id: "d-1",
-          workflowName: "kyc-manual",
-          status: "draft",
-          updatedAt: "2026-02-18T00:00:00.000Z",
-        },
-        {
-          id: "d-2",
-          workflowName: "fraud-monitor",
-          status: "pending",
-          updatedAt: "2026-02-18T00:00:00.000Z",
-        },
-      ],
+      data: [],
       isPending: false,
       isError: false,
       error: null,
@@ -197,15 +194,85 @@ describe("decisions page", () => {
 
     render(<DecisionsPageClient />);
 
-    fireEvent.change(
-      screen.getByRole("searchbox", { name: /search decisions/i }),
-      {
-        target: { value: "fraud" },
-      },
+    const searchBox = screen.getByRole("searchbox", {
+      name: /search decisions/i,
+    });
+    fireEvent.change(searchBox, {
+      target: { value: "fraud" },
+    });
+
+    const latestBeforeDebounce =
+      mockUseDecisionsQuery.mock.calls[
+        mockUseDecisionsQuery.mock.calls.length - 1
+      ];
+    expect(latestBeforeDebounce?.[1]).toEqual(
+      expect.objectContaining({ q: undefined }),
     );
 
-    expect(screen.getByText("d-2")).toBeInTheDocument();
-    expect(screen.queryByText("d-1")).not.toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+
+    const latestAfterDebounce =
+      mockUseDecisionsQuery.mock.calls[
+        mockUseDecisionsQuery.mock.calls.length - 1
+      ];
+    expect(latestAfterDebounce?.[1]).toEqual(
+      expect.objectContaining({ q: "fraud" }),
+    );
+  });
+
+  it("syncs filter fields into URL query params", () => {
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: /status filter/i }), {
+      target: { value: "failed" },
+    });
+    fireEvent.change(screen.getByLabelText(/from date/i), {
+      target: { value: "2026-02-01" },
+    });
+    fireEvent.change(screen.getByLabelText(/to date/i), {
+      target: { value: "2026-02-18" },
+    });
+
+    expect(window.location.search).toContain("status=failed");
+    expect(window.location.search).toContain("from=2026-02-01");
+    expect(window.location.search).toContain("to=2026-02-18");
+  });
+
+  it("hydrates filter values from URL query params on reload", () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/decisions?q=fraud&status=failed&from=2026-02-01&to=2026-02-18",
+    );
+
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+
+    expect(
+      screen.getByRole("searchbox", { name: /search decisions/i }),
+    ).toHaveValue("fraud");
+    expect(
+      screen.getByRole("combobox", { name: /status filter/i }),
+    ).toHaveValue("failed");
+    expect(screen.getByLabelText(/from date/i)).toHaveValue("2026-02-01");
+    expect(screen.getByLabelText(/to date/i)).toHaveValue("2026-02-18");
   });
 
   it("shows active sidebar accent strip on decisions nav item", () => {

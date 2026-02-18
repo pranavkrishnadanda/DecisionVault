@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import type { DecisionRecord } from "@/domain/decision";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { DecisionListFilters } from "@/api/decisions";
 import { useDecisionEvents } from "@/hooks/use-decision-events";
 import { useDecisionsQuery } from "@/hooks/use-decisions-query";
 import { selectSessionToken, useAuthStore } from "@/state/auth-store";
@@ -10,51 +10,144 @@ import { TableSkeleton } from "@/ui/components/skeleton/table-skeleton";
 import { AuthGate } from "@/ui/features/auth/auth-gate";
 import { DecisionList } from "@/ui/features/decisions/decision-list";
 import { DecisionToolbar } from "@/ui/features/decisions/decision-toolbar";
+import {
+  DECISION_FILTER_SEARCH_DEBOUNCE_MS,
+  DECISIONS_PAGE_LIMIT,
+} from "@/ui/features/decisions/filter-constants";
 
-function matchesDecisionQuery(decision: DecisionRecord, query: string) {
-  if (!query) {
-    return true;
+interface DecisionsFilterState {
+  q: string;
+  status: string;
+  from: string;
+  to: string;
+}
+
+function readInitialFiltersFromUrl(): DecisionsFilterState {
+  if (typeof window === "undefined") {
+    return {
+      q: "",
+      status: "",
+      from: "",
+      to: "",
+    };
   }
 
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return true;
-  }
+  const searchParams = new URLSearchParams(window.location.search);
+  return {
+    q: searchParams.get("q") ?? "",
+    status: searchParams.get("status") ?? "",
+    from: searchParams.get("from") ?? "",
+    to: searchParams.get("to") ?? "",
+  };
+}
 
-  return (
-    decision.id.toLowerCase().includes(normalizedQuery) ||
-    decision.workflowName.toLowerCase().includes(normalizedQuery) ||
-    decision.status.toLowerCase().includes(normalizedQuery)
-  );
+function useDebouncedValue(value: string, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [delayMs, value]);
+
+  return debouncedValue;
 }
 
 export function DecisionsPageClient() {
   const sessionToken = useAuthStore(selectSessionToken);
   const isAuthenticated = Boolean(sessionToken);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [filters, setFilters] = useState<DecisionsFilterState>(
+    readInitialFiltersFromUrl,
+  );
+  const debouncedQuery = useDebouncedValue(
+    filters.q,
+    DECISION_FILTER_SEARCH_DEBOUNCE_MS,
+  );
 
   useDecisionEvents(isAuthenticated);
 
-  const { data, error, isError, isPending, refetch } =
-    useDecisionsQuery(isAuthenticated);
+  const queryFilters = useMemo<DecisionListFilters>(() => {
+    return {
+      q: debouncedQuery.trim() || undefined,
+      status: filters.status || undefined,
+      from: filters.from || undefined,
+      to: filters.to || undefined,
+      limit: DECISIONS_PAGE_LIMIT,
+      offset: 0,
+    };
+  }, [debouncedQuery, filters.from, filters.status, filters.to]);
+
+  const { data, error, isError, isPending, refetch } = useDecisionsQuery(
+    isAuthenticated,
+    queryFilters,
+  );
 
   const onRetry = useCallback(() => {
     void refetch();
   }, [refetch]);
 
   const onSearchChange = useCallback((value: string) => {
-    setSearchQuery(value);
+    setFilters((current) => ({
+      ...current,
+      q: value,
+    }));
   }, []);
 
-  const filteredDecisions = useMemo(() => {
-    if (!data) {
-      return [];
+  const onStatusChange = useCallback((value: string) => {
+    setFilters((current) => ({
+      ...current,
+      status: value,
+    }));
+  }, []);
+
+  const onFromDateChange = useCallback((value: string) => {
+    setFilters((current) => ({
+      ...current,
+      from: value,
+    }));
+  }, []);
+
+  const onToDateChange = useCallback((value: string) => {
+    setFilters((current) => ({
+      ...current,
+      to: value,
+    }));
+  }, []);
+
+  const onClearFilters = useCallback(() => {
+    setFilters({
+      q: "",
+      status: "",
+      from: "",
+      to: "",
+    });
+  }, []);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams();
+    if (filters.q.trim()) {
+      searchParams.set("q", filters.q.trim());
+    }
+    if (filters.status) {
+      searchParams.set("status", filters.status);
+    }
+    if (filters.from) {
+      searchParams.set("from", filters.from);
+    }
+    if (filters.to) {
+      searchParams.set("to", filters.to);
     }
 
-    return data.filter((decision) =>
-      matchesDecisionQuery(decision, searchQuery),
-    );
-  }, [data, searchQuery]);
+    const queryString = searchParams.toString();
+    const nextUrl = queryString
+      ? `${window.location.pathname}?${queryString}`
+      : window.location.pathname;
+    window.history.replaceState({}, "", nextUrl);
+  }, [filters]);
 
   return (
     <AuthGate>
@@ -102,9 +195,16 @@ export function DecisionsPageClient() {
         </header>
 
         <DecisionToolbar
+          fromDate={filters.from}
+          onClearFilters={onClearFilters}
+          onFromDateChange={onFromDateChange}
           onRefresh={onRetry}
           onSearchChange={onSearchChange}
-          searchQuery={searchQuery}
+          onStatusChange={onStatusChange}
+          onToDateChange={onToDateChange}
+          searchQuery={filters.q}
+          selectedStatus={filters.status}
+          toDate={filters.to}
         />
 
         <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-md">
@@ -122,7 +222,7 @@ export function DecisionsPageClient() {
           ) : null}
 
           {!isPending && !isError && data ? (
-            <DecisionList decisions={filteredDecisions} />
+            <DecisionList decisions={data} />
           ) : null}
         </section>
       </section>

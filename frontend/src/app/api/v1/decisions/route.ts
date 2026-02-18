@@ -4,8 +4,12 @@ const BACKEND_BASE_URL = process.env.BACKEND_API_URL ?? "http://localhost:8000";
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
+  const upstreamUrl = new URL("/api/v1/decisions/", BACKEND_BASE_URL);
+  request.nextUrl.searchParams.forEach((value, key) => {
+    upstreamUrl.searchParams.set(key, value);
+  });
 
-  const upstream = await fetch(`${BACKEND_BASE_URL}/api/v1/decisions/`, {
+  const upstream = await fetch(upstreamUrl, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
