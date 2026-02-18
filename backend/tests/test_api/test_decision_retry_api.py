@@ -80,13 +80,19 @@ def failed_decision(owner_user):
 @pytest.mark.django_db
 class TestDecisionRetryEndpoint:
     def test_retry_requires_authentication(self, anonymous_client, failed_decision):
-        response = anonymous_client.post(f"/api/v1/decisions/{failed_decision.id}/retry/", {}, format="json")
+        response = anonymous_client.post(
+            f"/api/v1/decisions/{failed_decision.id}/retry/", {}, format="json"
+        )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_owner_can_retry_failed_decision(self, owner_client, failed_decision):
-        with patch("decisions.services.publish_decision", return_value=True) as mock_publish:
-            response = owner_client.post(f"/api/v1/decisions/{failed_decision.id}/retry/", {}, format="json")
+        with patch(
+            "decisions.services.publish_decision", return_value=True
+        ) as mock_publish:
+            response = owner_client.post(
+                f"/api/v1/decisions/{failed_decision.id}/retry/", {}, format="json"
+            )
 
         assert response.status_code == status.HTTP_202_ACCEPTED
         data = response.json()
@@ -115,12 +121,16 @@ class TestDecisionRetryEndpoint:
 
     def test_staff_can_retry_failed_decision(self, staff_client, failed_decision):
         with patch("decisions.services.publish_decision", return_value=True):
-            response = staff_client.post(f"/api/v1/decisions/{failed_decision.id}/retry/", {}, format="json")
+            response = staff_client.post(
+                f"/api/v1/decisions/{failed_decision.id}/retry/", {}, format="json"
+            )
 
         assert response.status_code == status.HTTP_202_ACCEPTED
 
     def test_non_owner_is_forbidden(self, other_client, failed_decision):
-        response = other_client.post(f"/api/v1/decisions/{failed_decision.id}/retry/", {}, format="json")
+        response = other_client.post(
+            f"/api/v1/decisions/{failed_decision.id}/retry/", {}, format="json"
+        )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
@@ -133,7 +143,9 @@ class TestDecisionRetryEndpoint:
             metadata={"source": "api"},
         )
 
-        response = owner_client.post(f"/api/v1/decisions/{pending_decision.id}/retry/", {}, format="json")
+        response = owner_client.post(
+            f"/api/v1/decisions/{pending_decision.id}/retry/", {}, format="json"
+        )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "status" in response.json()
@@ -141,6 +153,8 @@ class TestDecisionRetryEndpoint:
     def test_missing_decision_returns_404(self, owner_client):
         missing_id = uuid.uuid4()
 
-        response = owner_client.post(f"/api/v1/decisions/{missing_id}/retry/", {}, format="json")
+        response = owner_client.post(
+            f"/api/v1/decisions/{missing_id}/retry/", {}, format="json"
+        )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND

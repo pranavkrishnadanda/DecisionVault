@@ -198,14 +198,25 @@ class AuditLog(models.Model):
 | POST | `/api/v1/decisions/{id}/retry/` | Retry failed decision (owner or staff) |
 | GET | `/api/v1/decisions/{id}/audit/` | Get audit trail for decision |
 
-### 3.2 Health Endpoints
+Authentication requirements:
+- Decision endpoints require `Authorization: Bearer <JWT>`
+- Access is owner-scoped unless caller is staff/superuser
+
+### 3.2 Authentication Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/auth/token/` | Obtain JWT access/refresh token pair |
+| POST | `/api/v1/auth/token/refresh/` | Refresh JWT access token |
+
+### 3.3 Health Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/v1/health/live/` | Liveness probe (service is running) |
 | GET | `/api/v1/health/ready/` | Readiness probe (dependencies connected) |
 
-### 3.3 Request/Response Examples
+### 3.4 Request/Response Examples
 
 #### Create Decision
 ```http
