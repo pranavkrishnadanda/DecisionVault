@@ -22,6 +22,7 @@ from rest_framework.response import Response
 
 from decisions.models import Decision, DecisionStatus
 from decisions.realtime import decision_event_broker, event_stream_generator
+from decisions.renderers import ServerSentEventRenderer
 from decisions.serializers import DecisionSerializer, DecisionSubmitSerializer
 from decisions.services import AuditLogService, DecisionWorkflowService
 
@@ -144,7 +145,12 @@ class DecisionViewSet(viewsets.ViewSet):
 
         raise ValidationError({field_name: f"{field_name} must be an ISO datetime"})
 
-    @action(detail=False, methods=["get"], url_path="stream")
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="stream",
+        renderer_classes=[ServerSentEventRenderer],
+    )
     def stream(self, request):
         """
         Stream decision realtime updates over SSE.
