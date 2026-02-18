@@ -4,6 +4,7 @@ DRF ViewSets for DecisionVault.
 
 import uuid
 
+from django.db.models import Q
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import (
@@ -32,6 +33,27 @@ class DecisionViewSet(viewsets.ViewSet):
 
     serializer_class = DecisionSerializer
     permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        """
+        List decisions for operator dashboard.
+
+        Access policy:
+            - Staff/superuser: can view all decisions
+            - Regular user: can view only owned decisions
+        """
+        user = request.user
+        if user.is_staff or user.is_superuser:
+            queryset = Decision.objects.all().order_by("-created_at")
+        else:
+            user_id = str(user.id) if user.id is not None else ""
+            username = user.get_username()
+            queryset = Decision.objects.filter(
+                Q(created_by=user_id) | Q(created_by=username)
+            ).order_by("-created_at")
+
+        serializer = DecisionSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @staticmethod
     def _resolve_decision(pk: str) -> Decision:

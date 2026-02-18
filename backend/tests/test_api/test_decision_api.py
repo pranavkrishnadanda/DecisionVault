@@ -551,3 +551,68 @@ class TestDecisionStateTransitions:
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+class TestListDecisions:
+    """Test GET /api/v1/decisions/ endpoint."""
+
+    @pytest.fixture
+    def staff_user(self, django_user_model):
+        return django_user_model.objects.create_user(
+            username="staff-user",
+            email="staff@example.com",
+            password="pass1234",
+            is_staff=True,
+        )
+
+    @pytest.fixture
+    def staff_client(self, staff_user):
+        client = APIClient()
+        client.force_authenticate(user=staff_user)
+        return client
+
+    def test_list_requires_authentication(self, anonymous_client):
+        response = anonymous_client.get("/api/v1/decisions/")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_owner_only_sees_owned_decisions(self, api_client, api_user):
+        Decision.objects.create(
+            title="Owned",
+            description="owned decision",
+            created_by=str(api_user.id),
+            status=DecisionStatus.DRAFT,
+        )
+        Decision.objects.create(
+            title="Not Owned",
+            description="other decision",
+            created_by="someone-else",
+            status=DecisionStatus.DRAFT,
+        )
+
+        response = api_client.get("/api/v1/decisions/")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["title"] == "Owned"
+
+    def test_staff_sees_all_decisions(self, staff_client):
+        Decision.objects.create(
+            title="Decision A",
+            description="a",
+            created_by="owner-a",
+            status=DecisionStatus.DRAFT,
+        )
+        Decision.objects.create(
+            title="Decision B",
+            description="b",
+            created_by="owner-b",
+            status=DecisionStatus.DRAFT,
+        )
+
+        response = staff_client.get("/api/v1/decisions/")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) >= 2

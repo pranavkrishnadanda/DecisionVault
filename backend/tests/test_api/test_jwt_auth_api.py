@@ -72,6 +72,40 @@ class TestJWTTokenEndpoints:
 
 
 @pytest.mark.django_db
+class TestJWTRegistrationEndpoint:
+    def test_register_returns_201_with_tokens(self, api_client):
+        response = api_client.post(
+            "/api/v1/auth/register/",
+            {
+                "username": "new-operator",
+                "email": "new-operator@example.com",
+                "password": "StrongPass123!",
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        payload = response.json()
+        assert "access" in payload
+        assert "refresh" in payload
+        assert payload["user"]["username"] == "new-operator"
+
+    def test_register_duplicate_username_returns_400(self, api_client, user):
+        response = api_client.post(
+            "/api/v1/auth/register/",
+            {
+                "username": user.username,
+                "email": "another@example.com",
+                "password": "StrongPass123!",
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "username" in response.json()
+
+
+@pytest.mark.django_db
 class TestDecisionAuthorizationWithJWT:
     @staticmethod
     def _auth_client(username: str, password: str) -> APIClient:
