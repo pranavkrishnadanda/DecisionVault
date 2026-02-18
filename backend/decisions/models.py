@@ -139,6 +139,7 @@ class Decision(models.Model):
         ]
         verbose_name = "Decision"
         verbose_name_plural = "Decisions"
+        managed = True
     
     def __str__(self):
         return self.title
@@ -239,6 +240,7 @@ class Workflow(models.Model):
         ]
         verbose_name = "Workflow"
         verbose_name_plural = "Workflows"
+        managed = True
     
     def __str__(self):
         return self.name or str(self.decision)
@@ -340,6 +342,7 @@ class WorkflowStep(models.Model):
         ]
         verbose_name = "Workflow Step"
         verbose_name_plural = "Workflow Steps"
+        managed = True
     
     def __str__(self):
         return f"Step {self.step_number}: {self.action}"
@@ -453,6 +456,7 @@ class AuditLog(models.Model):
         ]
         verbose_name = "Audit Log"
         verbose_name_plural = "Audit Logs"
+        managed = True
     
     def __str__(self):
         return f"AuditLog(entity_type={self.entity_type}, action={self.action}, entity_id={self.entity_id})"
