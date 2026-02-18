@@ -6,12 +6,26 @@ import { OperatorShell } from "@/ui/layout/operator-shell";
 
 const mockUseDecisionsQuery = vi.fn();
 const mockUseDecisionEvents = vi.fn();
+const mockUseSavedViewsQuery = vi.fn();
+const mockUseCreateSavedViewMutation = vi.fn();
+const mockUseDeleteSavedViewMutation = vi.fn();
 
 vi.mock("@/hooks/use-decisions-query", () => ({
   useDecisionsQuery: (...args: unknown[]) => mockUseDecisionsQuery(...args),
 }));
 vi.mock("@/hooks/use-decision-events", () => ({
   useDecisionEvents: (...args: unknown[]) => mockUseDecisionEvents(...args),
+}));
+vi.mock("@/hooks/use-saved-views-query", () => ({
+  useSavedViewsQuery: (...args: unknown[]) => mockUseSavedViewsQuery(...args),
+}));
+vi.mock("@/hooks/use-create-saved-view-mutation", () => ({
+  useCreateSavedViewMutation: (...args: unknown[]) =>
+    mockUseCreateSavedViewMutation(...args),
+}));
+vi.mock("@/hooks/use-delete-saved-view-mutation", () => ({
+  useDeleteSavedViewMutation: (...args: unknown[]) =>
+    mockUseDeleteSavedViewMutation(...args),
 }));
 
 describe("decisions page", () => {
@@ -20,6 +34,24 @@ describe("decisions page", () => {
     useAuthStore.setState({ sessionToken: "jwt-token" });
     mockUseDecisionsQuery.mockReset();
     mockUseDecisionEvents.mockReset();
+    mockUseSavedViewsQuery.mockReset();
+    mockUseCreateSavedViewMutation.mockReset();
+    mockUseDeleteSavedViewMutation.mockReset();
+
+    mockUseSavedViewsQuery.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+    });
+    mockUseCreateSavedViewMutation.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    });
+    mockUseDeleteSavedViewMutation.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    });
+
     vi.useRealTimers();
   });
 
@@ -291,5 +323,152 @@ describe("decisions page", () => {
     );
 
     expect(screen.getByTestId("sidebar-active-decisions")).toBeInTheDocument();
+  });
+
+  it("saves current filters as saved view", () => {
+    const createSavedView = vi.fn();
+    mockUseCreateSavedViewMutation.mockReturnValue({
+      mutate: createSavedView,
+      isPending: false,
+    });
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: /search decisions/i }),
+      {
+        target: { value: "fraud" },
+      },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /save current filters/i }),
+    );
+
+    expect(createSavedView).toHaveBeenCalledWith({
+      filters: expect.objectContaining({ q: "fraud" }),
+      name: expect.any(String),
+    });
+  });
+
+  it("selecting saved view applies URL params and triggers server-filtered query", () => {
+    mockUseSavedViewsQuery.mockReturnValue({
+      data: [
+        {
+          id: "view-1",
+          name: "Failed fraud",
+          filters: {
+            q: "fraud",
+            status: "failed",
+            from: "2026-02-01",
+            to: "2026-02-18",
+          },
+        },
+      ],
+      isPending: false,
+      isError: false,
+    });
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: /saved views/i }), {
+      target: { value: "view-1" },
+    });
+
+    expect(window.location.search).toContain("q=fraud");
+    expect(window.location.search).toContain("status=failed");
+
+    const latestCall =
+      mockUseDecisionsQuery.mock.calls[
+        mockUseDecisionsQuery.mock.calls.length - 1
+      ];
+    expect(latestCall?.[1]).toEqual(
+      expect.objectContaining({ status: "failed" }),
+    );
+  });
+
+  it("deletes selected saved view", () => {
+    const deleteSavedView = vi.fn();
+    mockUseDeleteSavedViewMutation.mockReturnValue({
+      mutate: deleteSavedView,
+      isPending: false,
+    });
+    mockUseSavedViewsQuery.mockReturnValue({
+      data: [
+        {
+          id: "view-1",
+          name: "Failed fraud",
+          filters: { q: "fraud", status: "failed" },
+        },
+      ],
+      isPending: false,
+      isError: false,
+    });
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: /saved views/i }), {
+      target: { value: "view-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /delete saved view/i }));
+
+    expect(deleteSavedView).toHaveBeenCalledWith("view-1");
+  });
+
+  it("editing filters detaches selected saved view", () => {
+    mockUseSavedViewsQuery.mockReturnValue({
+      data: [
+        {
+          id: "view-1",
+          name: "Failed fraud",
+          filters: { q: "fraud", status: "failed" },
+        },
+      ],
+      isPending: false,
+      isError: false,
+    });
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: /saved views/i }), {
+      target: { value: "view-1" },
+    });
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: /search decisions/i }),
+      {
+        target: { value: "manual override" },
+      },
+    );
+
+    expect(screen.getByRole("combobox", { name: /saved views/i })).toHaveValue(
+      "",
+    );
   });
 });

@@ -1,12 +1,20 @@
 import { type ChangeEvent, useCallback } from "react";
 
 interface DecisionToolbarProps {
+  activeSavedViewId: string;
+  canDeleteSavedView: boolean;
+  isSavingView: boolean;
+  isDeletingView: boolean;
+  onDeleteSavedView: () => void;
   onRefresh: () => void;
   onClearFilters: () => void;
+  onSaveCurrentFilters: () => void;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: string) => void;
   onFromDateChange: (value: string) => void;
   onToDateChange: (value: string) => void;
+  onSavedViewSelect: (id: string) => void;
+  savedViewOptions: Array<{ id: string; name: string }>;
   selectedStatus: string;
   fromDate: string;
   toDate: string;
@@ -14,13 +22,21 @@ interface DecisionToolbarProps {
 }
 
 export function DecisionToolbar({
+  activeSavedViewId,
+  canDeleteSavedView,
   fromDate,
+  isDeletingView,
+  isSavingView,
   onClearFilters,
+  onDeleteSavedView,
   onFromDateChange,
   onRefresh,
+  onSaveCurrentFilters,
   onSearchChange,
+  onSavedViewSelect,
   onStatusChange,
   onToDateChange,
+  savedViewOptions,
   selectedStatus,
   searchQuery,
   toDate,
@@ -57,9 +73,16 @@ export function DecisionToolbar({
     [onToDateChange],
   );
 
+  const handleSavedViewChange = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>) => {
+      onSavedViewSelect(event.target.value);
+    },
+    [onSavedViewSelect],
+  );
+
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="grid grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_160px_170px_170px_auto_auto]">
+      <div className="grid grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_180px_170px_170px_180px_auto_auto_auto]">
         <input
           aria-label="Search decisions"
           className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none ring-sky-200 transition focus:border-sky-300 focus:ring-2 placeholder:text-slate-400"
@@ -99,6 +122,20 @@ export function DecisionToolbar({
           value={toDate}
         />
 
+        <select
+          aria-label="Saved views"
+          className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none ring-sky-200 transition focus:border-sky-300 focus:ring-2"
+          onChange={handleSavedViewChange}
+          value={activeSavedViewId}
+        >
+          <option value="">Saved views</option>
+          {savedViewOptions.map((view) => (
+            <option key={view.id} value={view.id}>
+              {view.name}
+            </option>
+          ))}
+        </select>
+
         <button
           className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
           disabled={!searchQuery && !selectedStatus && !fromDate && !toDate}
@@ -106,6 +143,24 @@ export function DecisionToolbar({
           type="button"
         >
           Clear
+        </button>
+
+        <button
+          className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+          disabled={isSavingView}
+          onClick={onSaveCurrentFilters}
+          type="button"
+        >
+          {isSavingView ? "Saving..." : "Save current filters"}
+        </button>
+
+        <button
+          className="inline-flex h-10 items-center justify-center rounded-md border border-rose-300 bg-white px-4 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-60"
+          disabled={!canDeleteSavedView || isDeletingView}
+          onClick={onDeleteSavedView}
+          type="button"
+        >
+          {isDeletingView ? "Deleting..." : "Delete saved view"}
         </button>
 
         <button

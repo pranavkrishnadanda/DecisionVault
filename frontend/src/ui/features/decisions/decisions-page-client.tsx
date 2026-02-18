@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DecisionListFilters } from "@/api/decisions";
+import { useCreateSavedViewMutation } from "@/hooks/use-create-saved-view-mutation";
 import { useDecisionEvents } from "@/hooks/use-decision-events";
 import { useDecisionsQuery } from "@/hooks/use-decisions-query";
+import { useDeleteSavedViewMutation } from "@/hooks/use-delete-saved-view-mutation";
+import { useSavedViewsQuery } from "@/hooks/use-saved-views-query";
 import { selectSessionToken, useAuthStore } from "@/state/auth-store";
 import { RetryPanel } from "@/ui/components/errors/retry-panel";
 import { TableSkeleton } from "@/ui/components/skeleton/table-skeleton";
@@ -20,6 +23,26 @@ interface DecisionsFilterState {
   status: string;
   from: string;
   to: string;
+}
+
+function normalizeSavedFilters(
+  filters: Partial<DecisionListFilters>,
+): DecisionsFilterState {
+  return {
+    q: typeof filters.q === "string" ? filters.q : "",
+    status: typeof filters.status === "string" ? filters.status : "",
+    from: typeof filters.from === "string" ? filters.from : "",
+    to: typeof filters.to === "string" ? filters.to : "",
+  };
+}
+
+function areFilterStatesEqual(
+  a: DecisionsFilterState,
+  b: DecisionsFilterState,
+) {
+  return (
+    a.q === b.q && a.status === b.status && a.from === b.from && a.to === b.to
+  );
 }
 
 function readInitialFiltersFromUrl(): DecisionsFilterState {
@@ -67,6 +90,7 @@ export function DecisionsPageClient() {
     filters.q,
     DECISION_FILTER_SEARCH_DEBOUNCE_MS,
   );
+  const [activeSavedViewId, setActiveSavedViewId] = useState("");
 
   useDecisionEvents(isAuthenticated);
 
@@ -85,6 +109,11 @@ export function DecisionsPageClient() {
     isAuthenticated,
     queryFilters,
   );
+  const { data: savedViews = [] } = useSavedViewsQuery(isAuthenticated);
+  const { mutate: createSavedView, isPending: isSavingView } =
+    useCreateSavedViewMutation();
+  const { mutate: deleteSavedView, isPending: isDeletingView } =
+    useDeleteSavedViewMutation();
 
   const onRetry = useCallback(() => {
     void refetch();
@@ -127,6 +156,53 @@ export function DecisionsPageClient() {
     });
   }, []);
 
+  const onSavedViewSelect = useCallback(
+    (id: string) => {
+      setActiveSavedViewId(id);
+      if (!id) {
+        return;
+      }
+
+      const selected = savedViews.find((view) => view.id === id);
+      if (!selected) {
+        return;
+      }
+
+      setFilters(normalizeSavedFilters(selected.filters));
+    },
+    [savedViews],
+  );
+
+  const onSaveCurrentFilters = useCallback(() => {
+    const hasFilters =
+      Boolean(filters.q.trim()) ||
+      Boolean(filters.status) ||
+      Boolean(filters.from) ||
+      Boolean(filters.to);
+    if (!hasFilters) {
+      return;
+    }
+
+    const generatedName = `Saved view ${new Date().toISOString().slice(0, 19)}`;
+    createSavedView({
+      name: generatedName,
+      filters: {
+        q: filters.q.trim() || undefined,
+        status: filters.status || undefined,
+        from: filters.from || undefined,
+        to: filters.to || undefined,
+      },
+    });
+  }, [createSavedView, filters.from, filters.q, filters.status, filters.to]);
+
+  const onDeleteSavedView = useCallback(() => {
+    if (!activeSavedViewId) {
+      return;
+    }
+    deleteSavedView(activeSavedViewId);
+    setActiveSavedViewId("");
+  }, [activeSavedViewId, deleteSavedView]);
+
   useEffect(() => {
     const searchParams = new URLSearchParams();
     if (filters.q.trim()) {
@@ -148,6 +224,23 @@ export function DecisionsPageClient() {
       : window.location.pathname;
     window.history.replaceState({}, "", nextUrl);
   }, [filters]);
+
+  useEffect(() => {
+    if (!activeSavedViewId) {
+      return;
+    }
+
+    const selected = savedViews.find((view) => view.id === activeSavedViewId);
+    if (!selected) {
+      setActiveSavedViewId("");
+      return;
+    }
+
+    const selectedFilters = normalizeSavedFilters(selected.filters);
+    if (!areFilterStatesEqual(filters, selectedFilters)) {
+      setActiveSavedViewId("");
+    }
+  }, [activeSavedViewId, filters, savedViews]);
 
   return (
     <AuthGate>
@@ -195,13 +288,24 @@ export function DecisionsPageClient() {
         </header>
 
         <DecisionToolbar
+          activeSavedViewId={activeSavedViewId}
+          canDeleteSavedView={Boolean(activeSavedViewId)}
           fromDate={filters.from}
+          isDeletingView={isDeletingView}
+          isSavingView={isSavingView}
           onClearFilters={onClearFilters}
+          onDeleteSavedView={onDeleteSavedView}
           onFromDateChange={onFromDateChange}
           onRefresh={onRetry}
+          onSaveCurrentFilters={onSaveCurrentFilters}
           onSearchChange={onSearchChange}
+          onSavedViewSelect={onSavedViewSelect}
           onStatusChange={onStatusChange}
           onToDateChange={onToDateChange}
+          savedViewOptions={savedViews.map((view) => ({
+            id: view.id,
+            name: view.name,
+          }))}
           searchQuery={filters.q}
           selectedStatus={filters.status}
           toDate={filters.to}

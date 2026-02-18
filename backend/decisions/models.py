@@ -436,3 +436,46 @@ class AuditLog(models.Model):
             except AuditLog.DoesNotExist:
                 pass  # Should not happen, but allow save
         super().save(*args, **kwargs)
+
+
+class SavedView(models.Model):
+    """User-owned saved filter presets for operator decisions list."""
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+        help_text="Unique identifier for the saved view",
+    )
+    user = models.ForeignKey(
+        "auth.User",
+        on_delete=models.CASCADE,
+        related_name="saved_views",
+        help_text="Owner of the saved view",
+    )
+    name = models.CharField(max_length=120, help_text="Saved view display name")
+    filters = models.JSONField(default=dict, help_text="Serialized decision filters")
+    created_at = models.DateTimeField(
+        auto_now_add=True, help_text="When saved view was created"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True, help_text="When saved view was last updated"
+    )
+
+    class Meta:
+        db_table = "saved_views"
+        ordering = ["name", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "name"], name="unique_user_saved_view_name"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+        ]
+        verbose_name = "Saved View"
+        verbose_name_plural = "Saved Views"
+        managed = True
+
+    def __str__(self):
+        return f"{self.user.username}:{self.name}"
