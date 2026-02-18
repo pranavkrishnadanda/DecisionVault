@@ -1,5 +1,7 @@
 # DecisionVault Backend - L3 Architecture (Implementation Specifications)
 
+**Governance**: This document is governed by `ARCHITECTURE_LOCK_V1_1.md`.
+
 ## Document Purpose
 
 This document provides granular implementation-level details including class diagrams, method signatures, data structures, algorithms, and code-level specifications for the DecisionVault backend system.
@@ -1372,4 +1374,4 @@ def create_decision(request):
 
 **Document Version**: 1.0  
 **Last Updated**: 2026-02-18  
-**Related**: [L1 Overview](./ARCHITECTURE_L1_OVERVIEW.md) | [L2 Detailed](./ARCHITECTURE_L2_DETAILED.md)
+**Related**: [Architecture Lock v1.1](./ARCHITECTURE_LOCK_V1_1.md) | [L1 Overview](./ARCHITECTURE_L1_OVERVIEW.md) | [L2 Detailed](./ARCHITECTURE_L2_DETAILED.md)

@@ -1,5 +1,7 @@
 # DecisionVault Backend - L1 Architecture Overview
 
+**Governance**: This document is governed by `ARCHITECTURE_LOCK_V1_1.md`.
+
 ## Executive Summary
 
 **DecisionVault** is a Django-based backend system designed for decision processing and workflow management. The architecture follows a modular, service-oriented design pattern with clear separation of concerns across multiple functional domains.
@@ -244,6 +246,7 @@ CACHES = {
 
 ## 10. Related Documents
 
+- **[Architecture Lock v1.1](./ARCHITECTURE_LOCK_V1_1.md)** - Canonical backend contract lock
 - **[L2 Architecture](./ARCHITECTURE_L2_DETAILED.md)** - Detailed component design
 - **[L3 Architecture](./ARCHITECTURE_L3_IMPLEMENTATION.md)** - Implementation specifications
 - **[Deployment Guide](../README.md)** - Setup and deployment instructions

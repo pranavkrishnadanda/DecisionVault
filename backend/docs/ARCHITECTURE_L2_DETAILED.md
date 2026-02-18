@@ -1,5 +1,7 @@
 # DecisionVault Backend - L2 Architecture (Detailed Component Design)
 
+**Governance**: This document is governed by `ARCHITECTURE_LOCK_V1_1.md`.
+
 ## Document Purpose
 
 This document provides detailed component-level architecture for the DecisionVault backend system. It describes internal structures, data flows, interfaces, and interactions between all system components.
@@ -593,4 +595,4 @@ LOGGING = {
 
 **Document Version**: 1.0  
 **Last Updated**: 2026-02-18  
-**Related**: [L1 Overview](./ARCHITECTURE_L1_OVERVIEW.md) | [L3 Implementation](./ARCHITECTURE_L3_IMPLEMENTATION.md)
+**Related**: [Architecture Lock v1.1](./ARCHITECTURE_LOCK_V1_1.md) | [L1 Overview](./ARCHITECTURE_L1_OVERVIEW.md) | [L3 Implementation](./ARCHITECTURE_L3_IMPLEMENTATION.md)

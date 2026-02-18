@@ -1,5 +1,7 @@
 # DecisionVault MVP v1 Architecture Specification
 
+**Governance**: This document is governed by `ARCHITECTURE_LOCK_V1_1.md`.
+
 **Version**: 1.0.0  
 **Status**: Approved  
 **Date**: 2026-02-18
@@ -24,7 +26,7 @@ This document defines the scoped architecture for MVP v1.
 
 ### MVP v1 (In Scope)
 - Core decision workflow (create, submit, process, complete)
-- Single queue (`decision_queue`)
+- Single queue (`decision_tasks`)
 - Single worker type (`SchemaValidator`)
 - Basic audit logging (append-only, no cryptographic chaining)
 - Schema verification only
@@ -53,7 +55,7 @@ This document defines the scoped architecture for MVP v1.
 │                                                                     │
 │  ┌──────────────────────────────────────────────────────────────┐ │
 │  │                    Single Queue Worker                        │ │
-│  │              (SchemaValidator - processes decision_queue)     │ │
+│  │              (SchemaValidator - processes decision_tasks)     │ │
 │  └──────────────────────────────────────────────────────────────┘ │
 └────────────────────────────────────────────────────────────────────┘
          ▲               ▲              ▲              ▲
@@ -279,7 +281,7 @@ Content-Type: application/json
 │            │                                                      │
 │            ▼                                                      │
 │  ┌─────────────────┐                                              │
-│  │ decision_queue  │                                              │
+│  │ decision_tasks  │                                              │
 │  │ (durable)       │                                              │
 │  └─────────────────┘                                              │
 │                                                                  │
@@ -310,7 +312,7 @@ Content-Type: application/json
 
 | Queue | Type | Durable | Max Priority | TTL |
 |-------|------|---------|--------------|-----|
-| `decision_queue` | Direct | Yes | 1 (reserved for v2) | 1h |
+| `decision_tasks` | Direct | Yes | 1 (reserved for v2) | 1h |
 
 ---
 
@@ -684,7 +686,7 @@ readinessProbe:
 |--------|----------|
 | Models | 2 (Decision, AuditLog) |
 | API Endpoints | 6 (decisions CRUD + submit + audit) |
-| Queues | 1 (decision_queue) |
+| Queues | 1 (decision_tasks) |
 | Workers | 1 (SchemaValidator) |
 | Verification | 1 (Schema) |
 | Total Tests | 182 |
