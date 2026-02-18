@@ -630,3 +630,11 @@ class TestDecisionStream:
         response = api_client.get("/api/v1/decisions/stream/")
         assert response.status_code == status.HTTP_200_OK
         assert response["Content-Type"] == "text/event-stream"
+
+    def test_stream_accepts_event_stream_content_negotiation(self, api_client):
+        response = api_client.get(
+            "/api/v1/decisions/stream/",
+            HTTP_ACCEPT="text/event-stream",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response["Content-Type"] == "text/event-stream"
