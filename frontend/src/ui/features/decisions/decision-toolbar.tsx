@@ -82,7 +82,7 @@ export function DecisionToolbar({
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="grid grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_180px_170px_170px_180px_auto_auto_auto]">
+      <div className="grid grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_180px_170px_170px_180px]">
         <input
           aria-label="Search decisions"
           className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none ring-sky-200 transition focus:border-sky-300 focus:ring-2 placeholder:text-slate-400"
@@ -135,9 +135,11 @@ export function DecisionToolbar({
             </option>
           ))}
         </select>
+      </div>
 
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <button
-          className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          className="inline-flex h-10 min-w-24 items-center justify-center whitespace-nowrap rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
           disabled={!searchQuery && !selectedStatus && !fromDate && !toDate}
           onClick={clearFilters}
           type="button"
@@ -146,7 +148,7 @@ export function DecisionToolbar({
         </button>
 
         <button
-          className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+          className="inline-flex h-10 min-w-40 items-center justify-center whitespace-nowrap rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
           disabled={isSavingView}
           onClick={onSaveCurrentFilters}
           type="button"
@@ -155,7 +157,7 @@ export function DecisionToolbar({
         </button>
 
         <button
-          className="inline-flex h-10 items-center justify-center rounded-md border border-rose-300 bg-white px-4 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-60"
+          className="inline-flex h-10 min-w-40 items-center justify-center whitespace-nowrap rounded-md border border-rose-300 bg-white px-4 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-60"
           disabled={!canDeleteSavedView || isDeletingView}
           onClick={onDeleteSavedView}
           type="button"
@@ -164,7 +166,7 @@ export function DecisionToolbar({
         </button>
 
         <button
-          className="inline-flex h-10 items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
+          className="inline-flex h-10 min-w-40 items-center justify-center whitespace-nowrap rounded-md bg-slate-900 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
           onClick={onRefresh}
           type="button"
         >
