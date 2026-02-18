@@ -2,11 +2,23 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DecisionListFilters } from "@/api/decisions";
+import {
+  DECISIONS_COLUMN_LABELS,
+  DECISIONS_DEFAULT_COLUMN_ORDER,
+  DECISIONS_DEFAULT_DENSITY,
+  DECISIONS_DEFAULT_VISIBLE_COLUMNS,
+  DECISIONS_TABLE_KEY,
+  type DecisionTableColumnKey,
+  type TableDensity,
+  type TablePreferenceRecord,
+} from "@/domain/table-preference";
 import { useCreateSavedViewMutation } from "@/hooks/use-create-saved-view-mutation";
 import { useDecisionEvents } from "@/hooks/use-decision-events";
 import { useDecisionsQuery } from "@/hooks/use-decisions-query";
 import { useDeleteSavedViewMutation } from "@/hooks/use-delete-saved-view-mutation";
 import { useSavedViewsQuery } from "@/hooks/use-saved-views-query";
+import { useTablePreferenceQuery } from "@/hooks/use-table-preference-query";
+import { useUpdateTablePreferenceMutation } from "@/hooks/use-update-table-preference-mutation";
 import { selectSessionToken, useAuthStore } from "@/state/auth-store";
 import { RetryPanel } from "@/ui/components/errors/retry-panel";
 import { TableSkeleton } from "@/ui/components/skeleton/table-skeleton";
@@ -23,6 +35,37 @@ interface DecisionsFilterState {
   status: string;
   from: string;
   to: string;
+}
+
+function defaultTablePreference(): TablePreferenceRecord {
+  return {
+    table: DECISIONS_TABLE_KEY,
+    visibleColumns: [...DECISIONS_DEFAULT_VISIBLE_COLUMNS],
+    columnOrder: [...DECISIONS_DEFAULT_COLUMN_ORDER],
+    density: DECISIONS_DEFAULT_DENSITY,
+  };
+}
+
+function moveColumn(
+  columns: DecisionTableColumnKey[],
+  column: DecisionTableColumnKey,
+  direction: -1 | 1,
+) {
+  const index = columns.indexOf(column);
+  if (index < 0) {
+    return columns;
+  }
+
+  const swapIndex = index + direction;
+  if (swapIndex < 0 || swapIndex >= columns.length) {
+    return columns;
+  }
+
+  const next = [...columns];
+  const temp = next[index];
+  next[index] = next[swapIndex] as DecisionTableColumnKey;
+  next[swapIndex] = temp as DecisionTableColumnKey;
+  return next;
 }
 
 function normalizeSavedFilters(
@@ -91,6 +134,8 @@ export function DecisionsPageClient() {
     DECISION_FILTER_SEARCH_DEBOUNCE_MS,
   );
   const [activeSavedViewId, setActiveSavedViewId] = useState("");
+  const [tablePreference, setTablePreference] =
+    useState<TablePreferenceRecord | null>(null);
 
   useDecisionEvents(isAuthenticated);
 
@@ -114,6 +159,20 @@ export function DecisionsPageClient() {
     useCreateSavedViewMutation();
   const { mutate: deleteSavedView, isPending: isDeletingView } =
     useDeleteSavedViewMutation();
+  const { data: hydratedTablePreference, isPending: isTablePreferencePending } =
+    useTablePreferenceQuery(isAuthenticated, DECISIONS_TABLE_KEY);
+  const { mutate: updateTablePreference, isPending: isSavingTableSettings } =
+    useUpdateTablePreferenceMutation();
+
+  useEffect(() => {
+    if (hydratedTablePreference && !tablePreference) {
+      setTablePreference(hydratedTablePreference);
+    }
+  }, [hydratedTablePreference, tablePreference]);
+
+  const effectiveTablePreference = tablePreference ?? defaultTablePreference();
+  const isTablePreferenceHydrating =
+    isAuthenticated && isTablePreferencePending && !tablePreference;
 
   const onRetry = useCallback(() => {
     void refetch();
@@ -209,6 +268,80 @@ export function DecisionsPageClient() {
     });
   }, [activeSavedViewId, deleteSavedView]);
 
+  const onToggleColumn = useCallback((column: DecisionTableColumnKey) => {
+    setTablePreference((currentState) => {
+      const current = currentState ?? defaultTablePreference();
+      const isVisible = current.visibleColumns.includes(column);
+      if (isVisible && current.visibleColumns.length === 1) {
+        return current;
+      }
+
+      const nextVisibleColumns = isVisible
+        ? current.visibleColumns.filter((item) => item !== column)
+        : [...current.visibleColumns, column];
+
+      return {
+        ...current,
+        visibleColumns: nextVisibleColumns,
+      };
+    });
+  }, []);
+
+  const onMoveColumnUp = useCallback((column: DecisionTableColumnKey) => {
+    setTablePreference((currentState) => {
+      const current = currentState ?? defaultTablePreference();
+      return {
+        ...current,
+        columnOrder: moveColumn(current.columnOrder, column, -1),
+      };
+    });
+  }, []);
+
+  const onMoveColumnDown = useCallback((column: DecisionTableColumnKey) => {
+    setTablePreference((currentState) => {
+      const current = currentState ?? defaultTablePreference();
+      return {
+        ...current,
+        columnOrder: moveColumn(current.columnOrder, column, 1),
+      };
+    });
+  }, []);
+
+  const onDensityChange = useCallback((value: TableDensity) => {
+    setTablePreference((currentState) => {
+      const current = currentState ?? defaultTablePreference();
+      return {
+        ...current,
+        density: value,
+      };
+    });
+  }, []);
+
+  const onSaveTableSettings = useCallback(() => {
+    const current = tablePreference ?? defaultTablePreference();
+    updateTablePreference({
+      table: DECISIONS_TABLE_KEY,
+      payload: {
+        visibleColumns: current.visibleColumns,
+        columnOrder: current.columnOrder,
+        density: current.density,
+      },
+    });
+  }, [tablePreference, updateTablePreference]);
+
+  const tableColumns = useMemo(
+    () =>
+      effectiveTablePreference.columnOrder.map((key) => ({
+        key,
+        label: DECISIONS_COLUMN_LABELS[key],
+        visible: effectiveTablePreference.visibleColumns.includes(key),
+      })),
+    [
+      effectiveTablePreference.columnOrder,
+      effectiveTablePreference.visibleColumns,
+    ],
+  );
+
   useEffect(() => {
     const searchParams = new URLSearchParams();
     if (filters.q.trim()) {
@@ -296,17 +429,24 @@ export function DecisionsPageClient() {
         <DecisionToolbar
           activeSavedViewId={activeSavedViewId}
           canDeleteSavedView={Boolean(activeSavedViewId)}
+          density={effectiveTablePreference.density}
           fromDate={filters.from}
           isDeletingView={isDeletingView}
+          isSavingTableSettings={isSavingTableSettings}
           isSavingView={isSavingView}
           onClearFilters={onClearFilters}
+          onDensityChange={onDensityChange}
           onDeleteSavedView={onDeleteSavedView}
           onFromDateChange={onFromDateChange}
+          onMoveColumnDown={onMoveColumnDown}
+          onMoveColumnUp={onMoveColumnUp}
           onRefresh={onRetry}
+          onSaveTableSettings={onSaveTableSettings}
           onSaveCurrentFilters={onSaveCurrentFilters}
           onSearchChange={onSearchChange}
           onSavedViewSelect={onSavedViewSelect}
           onStatusChange={onStatusChange}
+          onToggleColumn={onToggleColumn}
           onToDateChange={onToDateChange}
           savedViewOptions={savedViews.map((view) => ({
             id: view.id,
@@ -314,11 +454,14 @@ export function DecisionsPageClient() {
           }))}
           searchQuery={filters.q}
           selectedStatus={filters.status}
+          tableColumns={tableColumns}
           toDate={filters.to}
         />
 
         <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-md">
-          {isPending ? <TableSkeleton rows={8} /> : null}
+          {isPending || isTablePreferenceHydrating ? (
+            <TableSkeleton rows={8} />
+          ) : null}
 
           {isError ? (
             <RetryPanel
@@ -331,8 +474,13 @@ export function DecisionsPageClient() {
             />
           ) : null}
 
-          {!isPending && !isError && data ? (
-            <DecisionList decisions={data} />
+          {!isPending && !isTablePreferenceHydrating && !isError && data ? (
+            <DecisionList
+              columnOrder={effectiveTablePreference.columnOrder}
+              decisions={data}
+              density={effectiveTablePreference.density}
+              visibleColumns={effectiveTablePreference.visibleColumns}
+            />
           ) : null}
         </section>
       </section>

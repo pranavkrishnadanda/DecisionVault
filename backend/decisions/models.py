@@ -479,3 +479,72 @@ class SavedView(models.Model):
 
     def __str__(self):
         return f"{self.user.username}:{self.name}"
+
+
+def default_decisions_columns() -> list[str]:
+    return ["id", "workflow", "status", "updated"]
+
+
+def default_decisions_column_order() -> list[str]:
+    return ["id", "workflow", "status", "updated"]
+
+
+class TableDensity(models.TextChoices):
+    COMPACT = "compact", "Compact"
+    COMFORTABLE = "comfortable", "Comfortable"
+    SPACIOUS = "spacious", "Spacious"
+
+
+class TablePreference(models.Model):
+    """User-owned table presentation preferences."""
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+        help_text="Unique identifier for table preference",
+    )
+    user = models.ForeignKey(
+        "auth.User",
+        on_delete=models.CASCADE,
+        related_name="table_preferences",
+        help_text="Owner of table preferences",
+    )
+    table = models.CharField(
+        max_length=64,
+        help_text="Table identifier this preference belongs to",
+    )
+    visible_columns = models.JSONField(
+        default=default_decisions_columns,
+        help_text="Visible columns in render order",
+    )
+    column_order = models.JSONField(
+        default=default_decisions_column_order,
+        help_text="Full column order used by customization UI",
+    )
+    density = models.CharField(
+        max_length=24,
+        choices=TableDensity.choices,
+        default=TableDensity.COMFORTABLE,
+        help_text="Density mode for row height",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "table_preferences"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "table"], name="unique_user_table_preference"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user", "table"]),
+        ]
+        ordering = ["table"]
+        verbose_name = "Table Preference"
+        verbose_name_plural = "Table Preferences"
+        managed = True
+
+    def __str__(self):
+        return f"{self.user.username}:{self.table}"

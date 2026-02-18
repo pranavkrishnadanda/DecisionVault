@@ -5,7 +5,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import serializers
 
-from decisions.models import DecisionStatus, SavedView
+from decisions.models import DecisionStatus, SavedView, TableDensity, TablePreference
 
 User = get_user_model()
 
@@ -94,3 +94,78 @@ class SavedViewSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(f"{int_key} must be >= 0.")
 
         return value
+
+
+class TablePreferenceSerializer(serializers.ModelSerializer):
+    """Serializer for per-user operator table preferences."""
+
+    ALLOWED_TABLES = {"decisions"}
+    ALLOWED_COLUMNS_BY_TABLE = {
+        "decisions": ("id", "workflow", "status", "updated"),
+    }
+
+    class Meta:
+        model = TablePreference
+        fields = [
+            "id",
+            "table",
+            "visible_columns",
+            "column_order",
+            "density",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "table", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        table_name = attrs.get("table") or getattr(self.instance, "table", None)
+        if table_name not in self.ALLOWED_TABLES:
+            raise serializers.ValidationError({"table": "Unsupported table."})
+
+        allowed_columns = self.ALLOWED_COLUMNS_BY_TABLE[table_name]
+        visible_columns = attrs.get("visible_columns")
+        column_order = attrs.get("column_order")
+
+        if not isinstance(visible_columns, list) or not visible_columns:
+            raise serializers.ValidationError(
+                {"visible_columns": "visible_columns must be a non-empty list."}
+            )
+        if any(not isinstance(item, str) for item in visible_columns):
+            raise serializers.ValidationError(
+                {"visible_columns": "visible_columns entries must be strings."}
+            )
+        if any(item not in allowed_columns for item in visible_columns):
+            raise serializers.ValidationError(
+                {"visible_columns": "visible_columns contain unsupported values."}
+            )
+        if len(set(visible_columns)) != len(visible_columns):
+            raise serializers.ValidationError(
+                {"visible_columns": "visible_columns must not contain duplicates."}
+            )
+
+        if not isinstance(column_order, list):
+            raise serializers.ValidationError(
+                {"column_order": "column_order must be a list."}
+            )
+        if any(not isinstance(item, str) for item in column_order):
+            raise serializers.ValidationError(
+                {"column_order": "column_order entries must be strings."}
+            )
+        if set(column_order) != set(allowed_columns):
+            raise serializers.ValidationError(
+                {
+                    "column_order": "column_order must contain each available column exactly once."
+                }
+            )
+
+        if not set(visible_columns).issubset(set(column_order)):
+            raise serializers.ValidationError(
+                {"visible_columns": "visible_columns must be a subset of column_order."}
+            )
+
+        density = attrs.get("density")
+        valid_densities = {choice for choice, _ in TableDensity.choices}
+        if density not in valid_densities:
+            raise serializers.ValidationError({"density": "Invalid density."})
+
+        return attrs

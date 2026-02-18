@@ -1,20 +1,36 @@
 import { type ChangeEvent, useCallback } from "react";
+import type {
+  DecisionTableColumnKey,
+  TableDensity,
+} from "@/domain/table-preference";
 
 interface DecisionToolbarProps {
   activeSavedViewId: string;
   canDeleteSavedView: boolean;
+  density: TableDensity;
+  isSavingTableSettings: boolean;
   isSavingView: boolean;
   isDeletingView: boolean;
+  onDensityChange: (value: TableDensity) => void;
   onDeleteSavedView: () => void;
+  onMoveColumnDown: (column: DecisionTableColumnKey) => void;
+  onMoveColumnUp: (column: DecisionTableColumnKey) => void;
   onRefresh: () => void;
   onClearFilters: () => void;
+  onSaveTableSettings: () => void;
   onSaveCurrentFilters: () => void;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: string) => void;
+  onToggleColumn: (column: DecisionTableColumnKey) => void;
   onFromDateChange: (value: string) => void;
   onToDateChange: (value: string) => void;
   onSavedViewSelect: (id: string) => void;
   savedViewOptions: Array<{ id: string; name: string }>;
+  tableColumns: Array<{
+    key: DecisionTableColumnKey;
+    label: string;
+    visible: boolean;
+  }>;
   selectedStatus: string;
   fromDate: string;
   toDate: string;
@@ -24,20 +40,28 @@ interface DecisionToolbarProps {
 export function DecisionToolbar({
   activeSavedViewId,
   canDeleteSavedView,
+  density,
   fromDate,
   isDeletingView,
+  isSavingTableSettings,
   isSavingView,
   onClearFilters,
+  onDensityChange,
   onDeleteSavedView,
   onFromDateChange,
+  onMoveColumnDown,
+  onMoveColumnUp,
   onRefresh,
+  onSaveTableSettings,
   onSaveCurrentFilters,
   onSearchChange,
   onSavedViewSelect,
   onStatusChange,
+  onToggleColumn,
   onToDateChange,
   savedViewOptions,
   selectedStatus,
+  tableColumns,
   searchQuery,
   toDate,
 }: DecisionToolbarProps) {
@@ -78,6 +102,13 @@ export function DecisionToolbar({
       onSavedViewSelect(event.target.value);
     },
     [onSavedViewSelect],
+  );
+
+  const handleDensityChange = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>) => {
+      onDensityChange(event.target.value as TableDensity);
+    },
+    [onDensityChange],
   );
 
   return (
@@ -138,6 +169,78 @@ export function DecisionToolbar({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
+        <details className="mr-auto">
+          <summary className="inline-flex h-10 cursor-pointer list-none items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+            Table settings
+          </summary>
+          <div className="mt-2 w-[320px] rounded-md border border-slate-200 bg-white p-3 shadow-lg">
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Columns
+              </p>
+              {tableColumns.map((column) => (
+                <div
+                  className="flex items-center justify-between gap-2"
+                  key={column.key}
+                >
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      aria-label={`Column ${column.label}`}
+                      checked={column.visible}
+                      onChange={() => onToggleColumn(column.key)}
+                      type="checkbox"
+                    />
+                    {column.label}
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      aria-label={`Move ${column.label} up`}
+                      className="h-7 rounded border border-slate-300 px-2 text-xs text-slate-700"
+                      onClick={() => onMoveColumnUp(column.key)}
+                      type="button"
+                    >
+                      Up
+                    </button>
+                    <button
+                      aria-label={`Move ${column.label} down`}
+                      className="h-7 rounded border border-slate-300 px-2 text-xs text-slate-700"
+                      onClick={() => onMoveColumnDown(column.key)}
+                      type="button"
+                    >
+                      Down
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Density
+              </p>
+              <select
+                aria-label="Density"
+                className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-700"
+                onChange={handleDensityChange}
+                value={density}
+              >
+                <option value="compact">Compact</option>
+                <option value="comfortable">Comfortable</option>
+                <option value="spacious">Spacious</option>
+              </select>
+            </div>
+
+            <button
+              className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60"
+              disabled={isSavingTableSettings}
+              onClick={onSaveTableSettings}
+              type="button"
+            >
+              {isSavingTableSettings ? "Saving..." : "Save table settings"}
+            </button>
+          </div>
+        </details>
+
         <button
           className="inline-flex h-10 min-w-24 items-center justify-center whitespace-nowrap rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
           disabled={!searchQuery && !selectedStatus && !fromDate && !toDate}
