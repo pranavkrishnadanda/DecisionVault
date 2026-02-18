@@ -9,6 +9,8 @@ const mockUseDecisionEvents = vi.fn();
 const mockUseSavedViewsQuery = vi.fn();
 const mockUseCreateSavedViewMutation = vi.fn();
 const mockUseDeleteSavedViewMutation = vi.fn();
+const mockUseTablePreferenceQuery = vi.fn();
+const mockUseUpdateTablePreferenceMutation = vi.fn();
 
 vi.mock("@/hooks/use-decisions-query", () => ({
   useDecisionsQuery: (...args: unknown[]) => mockUseDecisionsQuery(...args),
@@ -27,6 +29,14 @@ vi.mock("@/hooks/use-delete-saved-view-mutation", () => ({
   useDeleteSavedViewMutation: (...args: unknown[]) =>
     mockUseDeleteSavedViewMutation(...args),
 }));
+vi.mock("@/hooks/use-table-preference-query", () => ({
+  useTablePreferenceQuery: (...args: unknown[]) =>
+    mockUseTablePreferenceQuery(...args),
+}));
+vi.mock("@/hooks/use-update-table-preference-mutation", () => ({
+  useUpdateTablePreferenceMutation: (...args: unknown[]) =>
+    mockUseUpdateTablePreferenceMutation(...args),
+}));
 
 describe("decisions page", () => {
   beforeEach(() => {
@@ -37,6 +47,8 @@ describe("decisions page", () => {
     mockUseSavedViewsQuery.mockReset();
     mockUseCreateSavedViewMutation.mockReset();
     mockUseDeleteSavedViewMutation.mockReset();
+    mockUseTablePreferenceQuery.mockReset();
+    mockUseUpdateTablePreferenceMutation.mockReset();
 
     mockUseSavedViewsQuery.mockReturnValue({
       data: [],
@@ -48,6 +60,20 @@ describe("decisions page", () => {
       isPending: false,
     });
     mockUseDeleteSavedViewMutation.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    });
+    mockUseTablePreferenceQuery.mockReturnValue({
+      data: {
+        table: "decisions",
+        visibleColumns: ["id", "workflow", "status", "updated"],
+        columnOrder: ["id", "workflow", "status", "updated"],
+        density: "comfortable",
+      },
+      isPending: false,
+      isError: false,
+    });
+    mockUseUpdateTablePreferenceMutation.mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
     });
@@ -483,6 +509,85 @@ describe("decisions page", () => {
 
     expect(screen.getByRole("combobox", { name: /saved views/i })).toHaveValue(
       "",
+    );
+  });
+
+  it("waits for table preferences hydration before rendering data rows", () => {
+    mockUseTablePreferenceQuery.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+    });
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [
+        {
+          id: "d1",
+          workflowName: "kyc",
+          status: "draft",
+          updatedAt: "2026-02-18T00:00:00.000Z",
+        },
+      ],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+
+    expect(screen.getAllByTestId("decision-skeleton-row")).toHaveLength(8);
+    expect(screen.queryByTestId("decision-row")).not.toBeInTheDocument();
+  });
+
+  it("persists table settings and applies density + visible columns", () => {
+    const updatePreference = vi.fn();
+    mockUseUpdateTablePreferenceMutation.mockReturnValue({
+      mutate: updatePreference,
+      isPending: false,
+    });
+    mockUseTablePreferenceQuery.mockReturnValue({
+      data: {
+        table: "decisions",
+        visibleColumns: ["id", "workflow", "status", "updated"],
+        columnOrder: ["id", "workflow", "status", "updated"],
+        density: "compact",
+      },
+      isPending: false,
+      isError: false,
+    });
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [
+        {
+          id: "d1",
+          workflowName: "kyc",
+          status: "draft",
+          updatedAt: "2026-02-18T00:00:00.000Z",
+        },
+      ],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+
+    fireEvent.click(screen.getByRole("button", { name: /table settings/i }));
+    fireEvent.click(screen.getByLabelText(/column updated/i));
+    fireEvent.click(screen.getByRole("button", { name: /move status up/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /save table settings/i }),
+    );
+
+    expect(updatePreference).toHaveBeenCalledWith({
+      table: "decisions",
+      payload: expect.objectContaining({
+        density: "compact",
+      }),
+    });
+    expect(screen.getByTestId("decision-row")).toHaveAttribute(
+      "data-density",
+      "compact",
     );
   });
 });

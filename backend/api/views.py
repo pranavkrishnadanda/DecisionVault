@@ -8,8 +8,18 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from api.serializers import RegisterSerializer, SavedViewSerializer
-from decisions.models import SavedView
+from api.serializers import (
+    RegisterSerializer,
+    SavedViewSerializer,
+    TablePreferenceSerializer,
+)
+from decisions.models import (
+    SavedView,
+    TableDensity,
+    TablePreference,
+    default_decisions_column_order,
+    default_decisions_columns,
+)
 
 
 def health(request):
@@ -67,3 +77,54 @@ class SavedViewViewSet(ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+
+class TablePreferenceDetailView(APIView):
+    """Retrieve and update per-user table preferences."""
+
+    permission_classes = [IsAuthenticated]
+
+    @staticmethod
+    def _default_payload(table_name: str) -> dict:
+        if table_name == "decisions":
+            return {
+                "visible_columns": default_decisions_columns(),
+                "column_order": default_decisions_column_order(),
+                "density": TableDensity.COMFORTABLE,
+            }
+        raise ValueError("Unsupported table")
+
+    def get(self, request, table: str):
+        if table != "decisions":
+            return Response(
+                {"detail": "Unsupported table."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        defaults = self._default_payload(table)
+        preference, _created = TablePreference.objects.get_or_create(
+            user=request.user,
+            table=table,
+            defaults=defaults,
+        )
+        serializer = TablePreferenceSerializer(preference)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request, table: str):
+        if table != "decisions":
+            return Response(
+                {"detail": "Unsupported table."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        defaults = self._default_payload(table)
+        preference, _created = TablePreference.objects.get_or_create(
+            user=request.user,
+            table=table,
+            defaults=defaults,
+        )
+        payload = dict(request.data)
+        payload["table"] = table
+
+        serializer = TablePreferenceSerializer(preference, data=payload)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
