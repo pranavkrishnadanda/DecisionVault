@@ -41,6 +41,10 @@ env/
 logs/
 *.log
 
+# Runtime dump artifacts
+backend/erl_crash.dump
+backend/dump.rdb
+
 # Database
 *.db
 *.sqlite3
