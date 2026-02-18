@@ -1,4 +1,4 @@
-import { type ChangeEvent, useCallback } from "react";
+import { type ChangeEvent, useCallback, useRef } from "react";
 import type {
   DecisionTableColumnKey,
   TableDensity,
@@ -65,6 +65,8 @@ export function DecisionToolbar({
   searchQuery,
   toDate,
 }: DecisionToolbarProps) {
+  const tableSettingsRef = useRef<HTMLDetailsElement | null>(null);
+
   const handleSearchChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       onSearchChange(event.target.value);
@@ -110,6 +112,13 @@ export function DecisionToolbar({
     },
     [onDensityChange],
   );
+
+  const handleSaveTableSettings = useCallback(() => {
+    onSaveTableSettings();
+    if (tableSettingsRef.current) {
+      tableSettingsRef.current.open = false;
+    }
+  }, [onSaveTableSettings]);
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
@@ -169,11 +178,18 @@ export function DecisionToolbar({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <details className="mr-auto">
+        <details
+          className="mr-auto relative"
+          data-testid="table-settings-popover"
+          ref={tableSettingsRef}
+        >
           <summary className="inline-flex h-10 cursor-pointer list-none items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
             Table settings
           </summary>
-          <div className="mt-2 w-[320px] rounded-md border border-slate-200 bg-white p-3 shadow-lg">
+          <div
+            className="absolute left-0 top-full z-30 mt-2 w-[320px] rounded-md border border-slate-200 bg-white p-3 shadow-lg"
+            data-testid="table-settings-panel"
+          >
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Columns
@@ -233,7 +249,7 @@ export function DecisionToolbar({
             <button
               className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60"
               disabled={isSavingTableSettings}
-              onClick={onSaveTableSettings}
+              onClick={handleSaveTableSettings}
               type="button"
             >
               {isSavingTableSettings ? "Saving..." : "Save table settings"}

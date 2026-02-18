@@ -590,4 +590,55 @@ describe("decisions page", () => {
       "compact",
     );
   });
+
+  it("closes table settings popover after saving", () => {
+    const updatePreference = vi.fn();
+    mockUseUpdateTablePreferenceMutation.mockReturnValue({
+      mutate: updatePreference,
+      isPending: false,
+    });
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [
+        {
+          id: "d1",
+          workflowName: "kyc",
+          status: "draft",
+          updatedAt: "2026-02-18T00:00:00.000Z",
+        },
+      ],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+
+    const popover = screen.getByTestId("table-settings-popover");
+    popover.setAttribute("open", "");
+    expect(popover).toHaveAttribute("open");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /save table settings/i }),
+    );
+
+    expect(updatePreference).toHaveBeenCalled();
+    expect(popover).not.toHaveAttribute("open");
+  });
+
+  it("renders table settings as overlay popover panel", () => {
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+
+    const panel = screen.getByTestId("table-settings-panel");
+    expect(panel.className).toContain("absolute");
+    expect(panel.className).toContain("z-30");
+  });
 });
