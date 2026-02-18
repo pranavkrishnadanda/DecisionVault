@@ -72,7 +72,7 @@ class DecisionViewSet(viewsets.ViewSet):
         status_param = request.query_params.get("status")
         if status_param:
             statuses = [
-                item.strip() for item in status_param.split(",") if item.strip()
+                item.strip().lower() for item in status_param.split(",") if item.strip()
             ]
             valid_statuses = {choice for choice, _ in DecisionStatus.choices}
             invalid_statuses = [
@@ -80,7 +80,10 @@ class DecisionViewSet(viewsets.ViewSet):
             ]
             if invalid_statuses:
                 raise ValidationError({"status": "Invalid status filter"})
-            queryset = queryset.filter(status__in=statuses)
+            status_query = Q()
+            for status_value in statuses:
+                status_query |= Q(status__iexact=status_value)
+            queryset = queryset.filter(status_query)
 
         query_param = request.query_params.get("q")
         if query_param:

@@ -80,6 +80,23 @@ class TestDecisionListFiltersAPI:
         statuses = {item["status"] for item in payload}
         assert statuses == {DecisionStatus.FAILED, DecisionStatus.PENDING}
 
+    def test_filter_by_status_is_case_insensitive(self, api_client, api_user):
+        user_id = str(api_user.id)
+        Decision.objects.create(
+            title="Legacy completed",
+            description="legacy mixed-case status record",
+            status="Completed",
+            created_by=user_id,
+            metadata={},
+        )
+
+        response = api_client.get("/api/v1/decisions/?status=completed")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        ids = {item["title"] for item in payload}
+        assert "Legacy completed" in ids
+
     def test_filter_by_search_query(self, api_client, seeded_decisions):
         response = api_client.get("/api/v1/decisions/?q=fraud")
 
