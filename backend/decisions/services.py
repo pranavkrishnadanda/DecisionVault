@@ -84,6 +84,30 @@ class AuditLogService:
             metadata={"source": "api"},
         )
 
+    @staticmethod
+    def log_retry(
+        decision: Decision,
+        previous_status: str,
+        actor_type: str = "api",
+        actor_id: Optional[str] = None,
+    ):
+        """Log decision retry operation."""
+        AuditLog.objects.create(
+            entity_type="decision",
+            entity_id=decision.id,
+            action=AuditAction.UPDATE,
+            actor_type=actor_type,
+            actor_id=actor_id or "",
+            previous_state={"status": previous_status},
+            current_state={
+                "status": decision.status,
+                "workflow_started_at": str(decision.workflow_started_at)
+                if decision.workflow_started_at
+                else None,
+            },
+            metadata={"source": "api", "operation": "retry"},
+        )
+
 
 class RabbitMQService:
     """Service for publishing messages to RabbitMQ."""
@@ -243,4 +267,45 @@ class DecisionWorkflowService:
         # Publish to queue
         published = publish_decision(str(decision.id))
 
+        return published
+
+    @staticmethod
+    @transaction.atomic
+    def retry_decision(decision: Decision) -> bool:
+        """
+        Retry a failed decision by re-queueing it.
+
+        Raises:
+            ValueError: If decision is not in FAILED status
+        """
+        if decision.status != DecisionStatus.FAILED:
+            raise ValueError(
+                f"Cannot retry decision with status '{decision.status}'. "
+                f"Only 'failed' decisions can be retried."
+            )
+
+        previous_status = decision.status
+        decision.status = DecisionStatus.PENDING
+        decision.workflow_started_at = timezone.now()
+        decision.workflow_completed_at = None
+        decision.agent_result = {}
+        decision.agent_error = ""
+        decision.save(
+            update_fields=[
+                "status",
+                "workflow_started_at",
+                "workflow_completed_at",
+                "agent_result",
+                "agent_error",
+                "updated_at",
+            ]
+        )
+
+        AuditLogService.log_retry(
+            decision=decision,
+            previous_status=previous_status,
+            actor_type="api",
+        )
+
+        published = publish_decision(str(decision.id))
         return published
