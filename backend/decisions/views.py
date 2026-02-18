@@ -12,6 +12,7 @@ from rest_framework.exceptions import (
     PermissionDenied,
     ValidationError,
 )
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from decisions.models import Decision, DecisionStatus
@@ -30,6 +31,7 @@ class DecisionViewSet(viewsets.ViewSet):
     """
 
     serializer_class = DecisionSerializer
+    permission_classes = [IsAuthenticated]
 
     @staticmethod
     def _resolve_decision(pk: str) -> Decision:
@@ -75,7 +77,8 @@ class DecisionViewSet(viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
 
         # Create decision
-        decision = serializer.save()
+        user_id = str(request.user.id) if request.user and request.user.id else ""
+        decision = serializer.save(created_by=user_id)
 
         # Create audit log
         AuditLogService.log_create(decision=decision, actor_type="api")
@@ -96,6 +99,7 @@ class DecisionViewSet(viewsets.ViewSet):
             404 Not Found if decision doesn't exist
         """
         decision = self._resolve_decision(pk)
+        self._enforce_owner_or_staff(request, decision)
 
         serializer = DecisionSerializer(decision)
         return Response(serializer.data)
@@ -114,6 +118,7 @@ class DecisionViewSet(viewsets.ViewSet):
             404 Not Found if decision doesn't exist
         """
         decision = self._resolve_decision(pk)
+        self._enforce_owner_or_staff(request, decision)
 
         # Validate empty payload
         submit_serializer = DecisionSubmitSerializer(data=request.data)
