@@ -195,6 +195,7 @@ class AuditLog(models.Model):
 | GET | `/api/v1/decisions/{id}/` | Get decision details with workflow state |
 | PUT | `/api/v1/decisions/{id}/` | Update decision (draft status only) |
 | POST | `/api/v1/decisions/{id}/submit/` | Submit decision for processing |
+| POST | `/api/v1/decisions/{id}/retry/` | Retry failed decision (owner or staff) |
 | GET | `/api/v1/decisions/{id}/audit/` | Get audit trail for decision |
 
 ### 3.2 Health Endpoints
@@ -256,6 +257,31 @@ Content-Type: application/json
   "message": "Decision queued for processing"
 }
 ```
+
+#### Retry Failed Decision
+```http
+POST /api/v1/decisions/{id}/retry/
+Content-Type: application/json
+Authorization: Bearer <token>
+
+{}
+```
+
+```http
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "pending",
+  "message": "Decision queued for retry"
+}
+```
+
+Retry constraints:
+- Decision MUST be in `failed` status
+- Caller MUST be decision owner or staff/superuser
+- Workflow terminal fields are reset before re-queue
 
 ---
 
