@@ -8,6 +8,7 @@ import { RetryPanel } from "@/ui/components/errors/retry-panel";
 import { TableSkeleton } from "@/ui/components/skeleton/table-skeleton";
 import { AuthGate } from "@/ui/features/auth/auth-gate";
 import { DecisionList } from "@/ui/features/decisions/decision-list";
+import { DecisionToolbar } from "@/ui/features/decisions/decision-toolbar";
 
 export function DecisionsPageClient() {
   const sessionToken = useAuthStore(selectSessionToken);
@@ -25,34 +26,39 @@ export function DecisionsPageClient() {
   return (
     <AuthGate>
       <section className="space-y-5">
-        <header>
-          <h2 className="text-xl font-semibold tracking-tight text-slate-900">
+        <header className="space-y-1">
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
             Decision operations
           </h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="text-sm text-slate-600">
             Monitor approval paths, inspect failures, and replay retries.
           </p>
-          <p className="mt-1 text-xs text-slate-400">
-            Session: {sessionToken ? "active" : "missing"}
+          <p className="text-xs text-slate-500">
+            Live updates are active. Session:{" "}
+            {sessionToken ? "authenticated" : "missing"}
           </p>
         </header>
 
-        {isPending ? <TableSkeleton rows={8} /> : null}
+        <DecisionToolbar onRefresh={onRetry} />
 
-        {isError ? (
-          <RetryPanel
-            ctaLabel="Retry loading decisions"
-            message={
-              error instanceof Error ? error.message : "Unexpected error"
-            }
-            onRetry={onRetry}
-            title="Unable to load decisions"
-          />
-        ) : null}
+        <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          {isPending ? <TableSkeleton rows={8} /> : null}
 
-        {!isPending && !isError && data ? (
-          <DecisionList decisions={data} />
-        ) : null}
+          {isError ? (
+            <RetryPanel
+              ctaLabel="Retry loading decisions"
+              message={
+                error instanceof Error ? error.message : "Unexpected error"
+              }
+              onRetry={onRetry}
+              title="Unable to load decisions"
+            />
+          ) : null}
+
+          {!isPending && !isError && data ? (
+            <DecisionList decisions={data} />
+          ) : null}
+        </section>
       </section>
     </AuthGate>
   );

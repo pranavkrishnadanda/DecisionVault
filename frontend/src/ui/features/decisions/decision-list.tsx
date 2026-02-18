@@ -1,6 +1,7 @@
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { useCallback, useMemo, useRef } from "react";
 import type { DecisionRecord } from "@/domain/decision";
+import { DecisionEmptyState } from "@/ui/features/decisions/decision-empty-state";
 import { DecisionRow } from "@/ui/features/decisions/decision-row";
 
 const INITIAL_LIST_RECT = { height: 520, width: 1200 };
@@ -86,6 +87,10 @@ export function DecisionList({ decisions }: { decisions: DecisionRecord[] }) {
     });
   }, [decisions, hasVirtualItems]);
 
+  if (decisions.length === 0) {
+    return <DecisionEmptyState />;
+  }
+
   return (
     <section className="space-y-3">
       <header className="grid grid-cols-[1.2fr_1fr_0.8fr_1fr] gap-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -94,7 +99,10 @@ export function DecisionList({ decisions }: { decisions: DecisionRecord[] }) {
         <span>Status</span>
         <span>Updated</span>
       </header>
-      <div className="h-[520px] overflow-auto" ref={parentRef}>
+      <div
+        className="h-[520px] overflow-auto rounded-md border border-slate-200 bg-slate-50/30 p-2"
+        ref={parentRef}
+      >
         <div style={totalHeightStyle}>
           {hasVirtualItems ? virtualItems.map(renderVirtualRow) : fallbackRows}
         </div>

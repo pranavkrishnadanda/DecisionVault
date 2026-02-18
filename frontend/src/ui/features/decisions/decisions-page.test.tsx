@@ -32,6 +32,13 @@ describe("decisions page", () => {
     render(<DecisionsPageClient />);
 
     expect(screen.getByText(/decision operations/i)).toBeInTheDocument();
+    expect(screen.getByText(/live updates are active/i)).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText(/search decisions/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /refresh decisions/i }),
+    ).toBeInTheDocument();
     expect(screen.getAllByTestId("decision-skeleton-row")).toHaveLength(8);
   });
 
@@ -55,6 +62,9 @@ describe("decisions page", () => {
 
     expect(screen.getByText("d1")).toBeInTheDocument();
     expect(screen.getByText("kyc")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("decision-status-pill-draft"),
+    ).toBeInTheDocument();
   });
 
   it("shows retry when query errors", () => {
@@ -125,5 +135,38 @@ describe("decisions page", () => {
 
     render(<DecisionsPageClient />);
     expect(mockUseDecisionEvents).toHaveBeenCalledWith(true);
+  });
+
+  it("shows empty state when no decisions are available", () => {
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+
+    expect(screen.getByText(/no decisions yet/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/new decisions will appear here in realtime/i),
+    ).toBeInTheDocument();
+  });
+
+  it("refresh button triggers decision refetch", () => {
+    const refetch = vi.fn();
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch,
+    });
+
+    render(<DecisionsPageClient />);
+    fireEvent.click(screen.getByRole("button", { name: /refresh decisions/i }));
+
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 });
