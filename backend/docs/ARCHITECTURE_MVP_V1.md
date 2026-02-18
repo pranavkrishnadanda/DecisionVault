@@ -193,9 +193,14 @@ class AuditLog(models.Model):
 | POST | `/api/v1/decisions/` | Create a new decision |
 | GET | `/api/v1/decisions/` | List decisions (paginated, filtered by status) |
 | GET | `/api/v1/decisions/{id}/` | Get decision details with workflow state |
+| GET | `/api/v1/decisions/{id}/workflow/` | Get decision workflow state |
 | PUT | `/api/v1/decisions/{id}/` | Update decision (draft status only) |
 | POST | `/api/v1/decisions/{id}/submit/` | Submit decision for processing |
 | GET | `/api/v1/decisions/{id}/audit/` | Get audit trail for decision |
+
+**Phase 2.5 Access Policy**:
+- `GET /api/v1/decisions/{id}/workflow/` requires authentication.
+- Access is limited to decision owner or staff/superuser.
 
 ### 3.2 Health Endpoints
 
