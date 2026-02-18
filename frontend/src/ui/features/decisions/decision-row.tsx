@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { type CSSProperties, memo } from "react";
 import type { DecisionRecord } from "@/domain/decision";
 import { DecisionStatusPill } from "@/ui/features/decisions/decision-status-pill";
@@ -14,7 +15,12 @@ function DecisionRowBase({ decision, style }: DecisionRowProps) {
       data-testid="decision-row"
       style={style}
     >
-      <span className="truncate font-medium text-slate-900">{decision.id}</span>
+      <Link
+        className="truncate font-medium text-slate-900 underline-offset-2 hover:underline"
+        href={`/decisions/${decision.id}`}
+      >
+        {decision.id}
+      </Link>
       <span className="truncate text-slate-700">{decision.workflowName}</span>
       <DecisionStatusPill status={decision.status} />
       <span className="text-slate-500">
