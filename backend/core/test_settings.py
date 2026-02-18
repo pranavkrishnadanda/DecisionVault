@@ -15,11 +15,11 @@ SECRET_KEY = os.getenv("SECRET_KEY", "test-secret-key-for-testing-only")
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
-# Test database - use separate DB name to avoid contaminating dev data
+# Test database - use same DB but pytest-django will handle test isolation
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME", "decisionvault_test"),
+        "NAME": os.getenv("DB_NAME", "decisionvault"),
         "USER": os.getenv("DB_USER", "dvuser"),
         "PASSWORD": os.getenv("DB_PASSWORD", "dvpass"),
         "HOST": os.getenv("DB_HOST", "localhost"),

@@ -47,6 +47,8 @@ INSTALLED_APPS = [
     "ingestion",
     "verification",
     "workers",
+    # DecisionVault core apps
+    "decisions",
 ]
 
 MIDDLEWARE = [
