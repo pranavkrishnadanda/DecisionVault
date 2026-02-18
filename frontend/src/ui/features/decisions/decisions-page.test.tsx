@@ -433,6 +433,20 @@ describe("decisions page", () => {
     fireEvent.click(screen.getByRole("button", { name: /delete saved view/i }));
 
     expect(deleteSavedView).toHaveBeenCalledWith("view-1");
+    expect(
+      screen.getByRole("searchbox", { name: /search decisions/i }),
+    ).toHaveValue("");
+    expect(
+      screen.getByRole("combobox", { name: /status filter/i }),
+    ).toHaveValue("");
+
+    const latestCall =
+      mockUseDecisionsQuery.mock.calls[
+        mockUseDecisionsQuery.mock.calls.length - 1
+      ];
+    expect(latestCall?.[1]).toEqual(
+      expect.objectContaining({ q: undefined, status: undefined }),
+    );
   });
 
   it("editing filters detaches selected saved view", () => {
