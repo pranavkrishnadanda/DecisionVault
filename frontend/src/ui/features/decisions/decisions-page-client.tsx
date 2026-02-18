@@ -201,6 +201,12 @@ export function DecisionsPageClient() {
     }
     deleteSavedView(activeSavedViewId);
     setActiveSavedViewId("");
+    setFilters({
+      q: "",
+      status: "",
+      from: "",
+      to: "",
+    });
   }, [activeSavedViewId, deleteSavedView]);
 
   useEffect(() => {
