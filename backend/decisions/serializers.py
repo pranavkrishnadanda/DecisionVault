@@ -3,12 +3,13 @@ DRF Serializers for DecisionVault.
 """
 
 from rest_framework import serializers
-from decisions.models import Decision, DecisionStatus
+
+from decisions.models import AuditLog, Decision, DecisionStatus
 
 
 class DecisionSerializer(serializers.ModelSerializer):
     """Serializer for Decision model."""
-    
+
     class Meta:
         model = Decision
         fields = [
@@ -37,26 +38,42 @@ class DecisionSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-    
+
     def validate_priority(self, value):
         """Validate priority is within allowed range."""
         if value < -10 or value > 10:
-            raise serializers.ValidationError(
-                "Priority must be between -10 and 10"
-            )
+            raise serializers.ValidationError("Priority must be between -10 and 10")
         return value
 
 
 class DecisionSubmitSerializer(serializers.Serializer):
     """Serializer for decision submission (empty payload)."""
-    
+
     pass
 
 
 class DecisionStateTransitionSerializer(serializers.ModelSerializer):
     """Serializer for decision state transitions."""
-    
+
     class Meta:
         model = Decision
         fields = ["status"]
         read_only_fields = ["status"]
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    """Serializer for decision audit trail entries."""
+
+    class Meta:
+        model = AuditLog
+        fields = [
+            "id",
+            "action",
+            "actor_type",
+            "actor_id",
+            "timestamp",
+            "previous_state",
+            "current_state",
+            "metadata",
+        ]
+        read_only_fields = fields

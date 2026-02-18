@@ -197,6 +197,10 @@ class AuditLog(models.Model):
 | POST | `/api/v1/decisions/{id}/submit/` | Submit decision for processing |
 | GET | `/api/v1/decisions/{id}/audit/` | Get audit trail for decision |
 
+**Phase 2.5 Access Policy**:
+- `GET /api/v1/decisions/{id}/audit/` requires authentication.
+- Access is limited to decision owner or staff/superuser.
+
 ### 3.2 Health Endpoints
 
 | Method | Endpoint | Description |
