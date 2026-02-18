@@ -8,7 +8,7 @@ Verifies that:
 """
 
 import pytest
-from django.urls import reverse, resolve
+from django.urls import resolve, reverse
 
 
 class TestHealthEndpoint:
@@ -17,7 +17,7 @@ class TestHealthEndpoint:
     def test_health_endpoint_exists(self):
         """
         Health endpoint should be resolvable.
-        
+
         This endpoint is critical for:
         - Load balancer health checks
         - Kubernetes readiness probes
@@ -29,12 +29,19 @@ class TestHealthEndpoint:
     def test_health_endpoint_returns_200(self, client):
         """
         Health endpoint should return HTTP 200.
-        
+
         Response should be JSON with status information.
         """
         response = client.get("/api/v1/health/")
         assert response.status_code == 200
         assert response["Content-Type"] == "application/json"
+
+    def test_health_endpoint_returns_request_id_header(self, client):
+        response = client.get("/api/v1/health/")
+
+        assert response.status_code == 200
+        assert "X-Request-ID" in response
+        assert response["X-Request-ID"]
 
     def test_health_endpoint_returns_status_ok(self, client):
         """
@@ -67,7 +74,7 @@ class TestModuleURLs:
     def test_ingestion_base_endpoint_exists(self):
         """
         Ingestion module should have a base endpoint.
-        
+
         This will be used for data ingestion operations.
         """
         # Endpoint should be defined (will fail until implemented)
@@ -77,7 +84,7 @@ class TestModuleURLs:
     def test_verification_base_endpoint_exists(self):
         """
         Verification module should have a base endpoint.
-        
+
         This will be used for verification workflows.
         """
         url = reverse("verification:verification-base")
@@ -86,7 +93,7 @@ class TestModuleURLs:
     def test_workers_base_endpoint_exists(self):
         """
         Workers module should have a base endpoint.
-        
+
         This will be used for worker status and job management.
         """
         url = reverse("workers:workers-base")
@@ -101,13 +108,14 @@ class TestURLNamespaces:
         API URLs should be namespaced under 'api'.
         """
         from django.urls import get_resolver
+
         resolver = get_resolver()
-        
+
         # Drill down to find api namespace
         api_patterns = None
         for pattern in resolver.url_patterns:
             if hasattr(pattern, "namespace") and pattern.namespace == "api":
                 api_patterns = pattern
                 break
-        
+
         assert api_patterns is not None, "API namespace not found in URL patterns"

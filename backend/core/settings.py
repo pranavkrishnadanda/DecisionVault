@@ -58,6 +58,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "core.middleware.RequestContextMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -164,14 +165,28 @@ STATIC_URL = "static/"
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "filters": {
+        "context": {
+            "()": "core.observability.ContextFilter",
+        },
+    },
+    "formatters": {
+        "json": {
+            "()": "core.observability.JsonFormatter",
+        },
+    },
     "handlers": {
         "file": {
             "level": "INFO",
             "class": "logging.FileHandler",
             "filename": "logs/app.log",
+            "filters": ["context"],
+            "formatter": "json",
         },
         "console": {
             "class": "logging.StreamHandler",
+            "filters": ["context"],
+            "formatter": "json",
         },
     },
     "root": {

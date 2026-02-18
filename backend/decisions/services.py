@@ -191,6 +191,14 @@ class RabbitMQService:
                 delivery_mode=2,  # Persistent
             ),
         )
+        logger.info(
+            "Published decision task message",
+            extra={
+                "queue": self.QUEUE_NAME,
+                "decision_id": str(decision_id),
+                "correlation_id": f"decision_{decision_id}",
+            },
+        )
         return True
 
     def close(self):

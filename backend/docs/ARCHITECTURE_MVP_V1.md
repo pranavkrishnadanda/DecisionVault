@@ -294,6 +294,22 @@ Retry constraints:
 - Caller MUST be decision owner or staff/superuser
 - Workflow terminal fields are reset before re-queue
 
+### 3.5 Observability & Tracing (Phase 3.0)
+
+DecisionVault uses structured JSON logging with request and queue trace identifiers.
+
+Observability contract:
+- Every HTTP response includes `X-Request-ID` (generated if absent)
+- Incoming `X-Request-ID` is preserved when provided by clients/gateways
+- Application logs are JSON-formatted with:
+  - `timestamp`, `level`, `logger`, `message`
+  - `request_id` (HTTP trace context)
+  - `correlation_id` (queue/workflow trace context)
+- RabbitMQ publish events log:
+  - `queue`
+  - `decision_id`
+  - `correlation_id` (`decision_<decision_id>`)
+
 ---
 
 ## 4. Queue Architecture (MVP v1)
