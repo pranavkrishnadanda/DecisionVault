@@ -12,7 +12,7 @@ function buildCallbackRedirect(
   integrationId: string,
   status: "success" | "error",
 ) {
-  return `/integrations?onboarding=resume&integrationId=${integrationId}&step=triggers&oauth=${status}`;
+  return `/integrations?integrationId=${integrationId}&oauth=${status}`;
 }
 
 function resolveRedirectUri() {
@@ -100,7 +100,7 @@ export function SlackOAuthCallbackClient() {
         Completing Slack connection
       </h2>
       <p className="mt-2 text-sm text-slate-600">
-        Redirecting back to onboarding...
+        Redirecting back to integrations...
       </p>
     </section>
   );

@@ -24,4 +24,5 @@ urlpatterns = [
     path("api/ingestion/", include("ingestion.urls", namespace="ingestion")),
     path("api/verification/", include("verification.urls", namespace="verification")),
     path("api/workers/", include("workers.urls", namespace="workers")),
+    path("api/slack/", include("app.slack.urls")),
 ]

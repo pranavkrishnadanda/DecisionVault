@@ -18,6 +18,12 @@ from api.models import (
     IntegrationDeliveryAttempt,
     IntegrationTrigger,
 )
+from app.slack.models import (
+    SlackAuditLog,
+    SlackIntegration,
+    SlackIntegrationTestLog,
+    SlackUserCache,
+)
 
 
 @pytest.fixture(scope="session")
@@ -38,6 +44,10 @@ def ensure_integration_tables_exist(db):
         "integration_triggers": IntegrationTrigger,
         "integration_deliveries": IntegrationDelivery,
         "integration_delivery_attempts": IntegrationDeliveryAttempt,
+        "slack_integrations": SlackIntegration,
+        "slack_audit_logs": SlackAuditLog,
+        "slack_user_cache": SlackUserCache,
+        "slack_integration_test_logs": SlackIntegrationTestLog,
     }
 
     with connection.cursor() as cursor:
@@ -55,6 +65,10 @@ def ensure_integration_tables_exist(db):
         IntegrationTrigger,
         IntegrationDelivery,
         IntegrationDeliveryAttempt,
+        SlackIntegration,
+        SlackAuditLog,
+        SlackUserCache,
+        SlackIntegrationTestLog,
     ]
     with connection.schema_editor() as schema_editor:
         for model_class in creation_order:

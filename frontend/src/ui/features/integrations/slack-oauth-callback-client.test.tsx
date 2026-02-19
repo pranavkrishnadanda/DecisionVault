@@ -55,7 +55,7 @@ describe("slack oauth callback", () => {
     mockUseAuthStore.mockReturnValue("jwt-token");
   });
 
-  it("completes oauth callback and resumes onboarding at trigger step", async () => {
+  it("completes oauth callback and resumes integrations inline flow", async () => {
     const mutateAsync = vi.fn().mockResolvedValue({});
     mockUseCompleteSlackOAuthMutation.mockReturnValue({
       mutateAsync,
@@ -68,10 +68,10 @@ describe("slack oauth callback", () => {
       expect(mutateAsync).toHaveBeenCalledWith({
         integrationId: "int-2",
         code: "oauth-code",
-        redirectUri: "http://localhost/oauth/slack/callback",
+        redirectUri: "http://localhost:3000/oauth/slack/callback",
       });
       expect(mockReplace).toHaveBeenCalledWith(
-        "/integrations?onboarding=resume&integrationId=int-2&step=triggers&oauth=success",
+        "/integrations?integrationId=int-2&oauth=success",
       );
     });
   });
@@ -87,7 +87,7 @@ describe("slack oauth callback", () => {
 
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith(
-        "/integrations?onboarding=resume&integrationId=int-2&step=triggers&oauth=error",
+        "/integrations?integrationId=int-2&oauth=error",
       );
     });
   });

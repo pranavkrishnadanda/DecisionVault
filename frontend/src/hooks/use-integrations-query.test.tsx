@@ -33,7 +33,9 @@ describe("useSlackConnectMutation", () => {
   });
 
   it("uses canonical callback redirect URI without dynamic query params", async () => {
-    mockGetSlackInstallUrl.mockResolvedValue("https://slack.com/oauth/v2/authorize");
+    mockGetSlackInstallUrl.mockResolvedValue(
+      "https://slack.com/oauth/v2/authorize",
+    );
     const queryClient = new QueryClient();
 
     const { result } = renderHook(() => useSlackConnectMutation(), {
@@ -50,7 +52,7 @@ describe("useSlackConnectMutation", () => {
     await waitFor(() => {
       expect(mockGetSlackInstallUrl).toHaveBeenCalledWith(
         "int-2",
-        "http://localhost/oauth/slack/callback",
+        "http://localhost:3000/oauth/slack/callback",
       );
     });
   });

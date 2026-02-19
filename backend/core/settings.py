@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     "workers",
     # DecisionVault core apps
     "decisions",
+    "app.slack",
 ]
 
 MIDDLEWARE = [
@@ -208,8 +209,11 @@ SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID", "slack-client-id")
 SLACK_CLIENT_SECRET = os.getenv("SLACK_CLIENT_SECRET", "slack-client-secret")
 SLACK_SCOPES = os.getenv(
     "SLACK_SCOPES",
-    "chat:write,channels:read,channels:join",
+    "channels:read,channels:history,groups:read,groups:history,chat:write,users:read",
 )
+SLACK_REDIRECT_BASE_URL = os.getenv("SLACK_REDIRECT_BASE_URL", "https://xxxx.ngrok-free.app")
+SLACK_SIGNING_SECRET = os.getenv("SLACK_SIGNING_SECRET", "")
+TOKEN_ENCRYPTION_KEY = os.getenv("TOKEN_ENCRYPTION_KEY", "")
 
 CACHES = {
     "default": {

@@ -1,33 +1,33 @@
 version: "3.9"
 
 services:
-  redis:
-    image: redis:7
-    ports: ["6379:6379"]
-
-  rabbitmq:
-    image: rabbitmq:3-management
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-
-  django:
+  app:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
-    volumes:
-      - ./backend:/app
+    env_file:
+      - backend/.env
     ports:
       - "8000:8000"
     depends_on:
-      redis:
-        condition: service_started
-      rabbitmq:
-        condition: service_started
-    environment:
-      DB_HOST: postgres
-      DB_NAME: decisionvault
-      DB_USER: dvuser
-      DB_PASSWORD: dvpass
-      UV_LINK_MODE: copy
+      - postgres
+      - redis
 
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: decisionvault
+      POSTGRES_USER: dvuser
+      POSTGRES_PASSWORD: dvpass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:

@@ -109,6 +109,7 @@ describe("integrations page slack inline flow", () => {
     expect(
       screen.getByRole("button", { name: /connect slack workspace/i }),
     ).toBeInTheDocument();
+    expect(screen.getByText(/^disabled$/i)).toBeInTheDocument();
   });
 
   it("shows channel picker after oauth resume and hides internal params", async () => {
@@ -150,6 +151,43 @@ describe("integrations page slack inline flow", () => {
     });
     expect(screen.queryByText(/onboarding=resume/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/step=triggers/i)).not.toBeInTheDocument();
+  });
+
+  it("shows channel picker for silent oauth resume params", async () => {
+    mockUseSearchParams.mockReturnValue(
+      new URLSearchParams("integrationId=int-2&oauth=success"),
+    );
+    mockUseIntegrationsQuery.mockReturnValue({
+      data: [
+        {
+          id: "int-2",
+          name: "Slack Workspace",
+          connectorType: "slack",
+          config: {},
+          tokenExpiresAt: null,
+          isActive: true,
+          lastError: "",
+          triggers: [],
+          createdAt: "2026-02-19T00:00:00.000Z",
+          updatedAt: "2026-02-19T00:00:00.000Z",
+        },
+      ],
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    mockUseSlackChannelsQuery.mockReturnValue({
+      data: [{ id: "COPS", name: "ops-alerts" }],
+      isPending: false,
+      isError: false,
+    });
+
+    render(<IntegrationsPageClient />);
+
+    expect(screen.getByLabelText(/slack channel/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/integrations");
+    });
   });
 
   it("enables send test only after channel selection", () => {

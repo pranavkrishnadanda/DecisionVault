@@ -1,218 +1,146 @@
-# DecisionVault
+# DecisionVault Slack Integration
 
-AI-enabled platform for verifiable decision-making, agent orchestration, and auditable workflows.
+Production-grade Slack OAuth + channel discovery + message history + test delivery for a multi-tenant SaaS app.
 
-## Overview
+## Stack
+- Backend: Django + httpx + cryptography (Fernet)
+- Frontend: Next.js + React Query
+- Storage: PostgreSQL
+- Cache: Redis
 
-DecisionVault is a Django-based backend system designed for decision processing and workflow management. It follows a modular, service-oriented design with clear separation of concerns across multiple functional domains.
+## End-to-End Flow
+1. User clicks `Add Slack` on `/integrations/slack`.
+2. Browser is redirected to `GET /api/slack/install`.
+3. Slack OAuth consent screen opens.
+4. Slack redirects to `GET /api/slack/callback`.
+5. Server exchanges code for token server-side, encrypts token at rest, stores integration.
+6. Frontend returns to `/integrations/slack?status=success`, loads channels/messages, and can send test message.
 
-## Architecture
+No end user ever sees client secret or bot token.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     DecisionVault System                         │
-│                                                                  │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │   API       │  │   Core      │  │  Ingestion  │              │
-│  │   Module    │  │   Module    │  │   Module    │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-│                                                                  │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │Verification │  │   Workers   │  │  Messaging  │              │
-│  │   Module    │  │   Module    │  │   (RabbitMQ)│              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-└─────────────────────────────────────────────────────────────────┘
-          ▲                    ▲                    ▲
-          │                    │                    │
-          ▼                    ▼                    ▼
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│    Frontend     │  │   PostgreSQL    │  │     Redis       │
-│   (External)    │  │    Database     │  │     Cache       │
-└─────────────────┘  └─────────────────┘  └─────────────────┘
-```
-
-## Tech Stack
-
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| Framework | Django | ≥6.0.2 |
-| API | Django REST Framework | ≥3.16.1 |
-| Language | Python | ≥3.12 |
-| WSGI Server | Gunicorn | ≥25.1.0 |
-| Database | PostgreSQL | 15+ |
-| Cache | Redis | 7 |
-| Message Queue | RabbitMQ | 3-management |
-| Testing | pytest, pytest-django | latest |
-
-## Project Structure
-
-```
-decisionvault/
-├── backend/
-│   ├── api/              # REST API endpoints
-│   ├── core/             # Django configuration & settings
-│   ├── ingestion/        # Data ingestion module
-│   ├── verification/     # Verification workflows
-│   ├── workers/          # Background job processing
-│   ├── tests/            # Test suite (49+ tests)
-│   ├── docs/             # Architecture documentation
-│   ├── manage.py         # Django management script
-│   ├── pyproject.toml    # Python dependencies
-│   └── pytest.ini        # Pytest configuration
-├── frontend/             # Next.js frontend (TBD)
-└── docker-compose.yml    # Local development stack
-```
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.12+
-- Docker & Docker Compose
-- uv (Python package manager)
-
-### Local Development
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/21bq1a4232/DecisionVault.git
-   cd decisionvault
-   ```
-
-2. **Start infrastructure (PostgreSQL, Redis, RabbitMQ)**
-   ```bash
-   docker-compose up -d redis rabbitmq
-   ```
-
-3. **Set up Python environment**
-   ```bash
-   cd backend
-   uv sync
-   source .venv/bin/activate
-   ```
-
-4. **Configure environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
-
-5. **Run migrations**
-   ```bash
-   python manage.py migrate
-   ```
-
-6. **Start development server**
-   ```bash
-   python manage.py runserver
-   ```
-
-7. **Verify health endpoint**
-   ```bash
-   curl http://localhost:8000/api/health/
-   # Expected: {"status": "ok", "version": "0.1.0"}
-   ```
-
-### Docker Development
-
-```bash
-docker-compose up -d
-docker-compose exec django python manage.py migrate
-```
-
-Access the API at `http://localhost:8000`.
-
-## Running Tests
-
-```bash
-cd backend
-source .venv/bin/activate
-pytest tests/ -v
-```
-
-### Test Coverage
-
-| Category | Tests | Description |
-|----------|-------|-------------|
-| Module Registration | 7 | Verifies app registration in INSTALLED_APPS |
-| URL Routing | 9 | Tests endpoint availability and namespaces |
-| Settings | 15 | Environment variable configuration |
-| Redis Integration | 10 | Cache connectivity and operations |
-| RabbitMQ Integration | 8 | Message queue connectivity |
-| **Total** | **49** | All passing |
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/health/` | GET | Health check for load balancers |
-| `/api/ingestion/` | GET | Ingestion module base |
-| `/api/verification/` | GET | Verification module base |
-| `/api/workers/` | GET | Workers module base |
-| `/admin/` | GET | Django admin interface |
+## Slack App Setup (One-Time)
+1. Go to https://api.slack.com/apps and create an app (From Scratch).
+2. Choose a dev workspace.
+3. OAuth & Permissions:
+   - Redirect URL (dev): `https://<your-ngrok>/api/slack/callback`
+   - Redirect URL (prod): `https://yourdomain.com/api/slack/callback`
+4. Add bot scopes:
+   - `channels:read`
+   - `channels:history`
+   - `groups:read`
+   - `groups:history`
+   - `chat:write`
+   - `users:read`
+5. Copy values from Basic Information:
+   - Client ID
+   - Client Secret
+   - Signing Secret
+6. Configure environment variables in `backend/.env`.
 
 ## Environment Variables
+Copy `backend/.env.example` to `backend/.env`.
 
-Create a `.env` file in `backend/` based on `.env.example`:
-
+Required:
 ```bash
-# Django Settings
-DEBUG=False
-SECRET_KEY=your-super-secret-key-change-in-production
-ALLOWED_HOSTS=localhost,127.0.0.1,yourdomain.com
-
-# PostgreSQL Database
-DB_NAME=decisionvault
-DB_USER=dvuser
-DB_PASSWORD=your-secure-password
-DB_HOST=localhost
-DB_PORT=5432
-
-# Redis Cache
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
-# RabbitMQ Message Broker
-RABBITMQ_HOST=localhost
-RABBITMQ_PORT=5672
+SLACK_CLIENT_ID=
+SLACK_CLIENT_SECRET=
+SLACK_SIGNING_SECRET=
+SLACK_REDIRECT_BASE_URL=https://xxxx.ngrok-free.app
+TOKEN_ENCRYPTION_KEY=
 ```
 
-## Development Workflow
+Generate encryption key:
+```bash
+./scripts/generate-encryption-key.sh
+```
 
-This project follows **Test-Driven Development (TDD)**:
+## HTTPS Options
 
-1. Write failing tests first
-2. Implement minimal working code
-3. Refactor safely
-4. Add integration tests
+### Option 1 (Default Dev): ngrok
+Slack OAuth redirect URIs and Events API require HTTPS.
 
-No feature is accepted without tests.
+Run:
+```bash
+./scripts/setup-tunnel.sh 8000
+```
 
-## Architecture Documents
+This script:
+- installs ngrok if missing (via Homebrew)
+- starts tunnel to localhost
+- prints HTTPS URL
+- reminds you to update Slack redirect URI
 
-- [L1 Architecture Overview](backend/docs/ARCHITECTURE_L1_OVERVIEW.md) - High-level system context
-- [L2 Architecture Detailed](backend/docs/ARCHITECTURE_L2_DETAILED.md) - Component design
-- [L3 Implementation](backend/docs/ARCHITECTURE_L3_IMPLEMENTATION.md) - Implementation specs
+Important: free ngrok URLs rotate on restart.
 
-## Contributing
+### Option 2: Cloudflare Tunnel
+Run:
+```bash
+./scripts/setup-cloudflare-tunnel.sh 8000
+```
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Write tests for your changes
-4. Ensure all tests pass (`pytest tests/ -v`)
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
+This is often more stable for longer-running demo/dev sessions.
 
-## License
+### Option 3 (Recommended Production): Managed Deploy (Railway)
+Included:
+- `Dockerfile` (multi-stage build)
+- `railway.toml`
 
-MIT License - see LICENSE file for details.
+Deploy on Railway and set env vars in Railway dashboard. TLS/HTTPS is automatic.
 
-## Contact
+### Option 4: Self-host with Nginx + Let's Encrypt
+Included:
+- `deploy/nginx/decisionvault.conf`
+- `scripts/setup-letsencrypt-nginx.sh`
 
-Repository: https://github.com/21bq1a4232/DecisionVault
+Run on VPS:
+```bash
+./scripts/setup-letsencrypt-nginx.sh yourdomain.com admin@yourdomain.com
+```
 
----
+## Local Development
+1. Start infra:
+```bash
+docker-compose up -d postgres redis
+```
+2. Backend:
+```bash
+cd backend
+uv sync
+source .venv/bin/activate
+python manage.py runserver 0.0.0.0:8000
+```
+3. Frontend:
+```bash
+cd frontend
+npm ci
+npm run dev
+```
 
-**Version**: 0.1.0  
-**Last Updated**: 2026-02-18
+## API Surface
+- `GET /api/slack/install`
+- `GET /api/slack/callback`
+- `GET /api/slack/channels?integration_id=...`
+- `GET /api/slack/messages?integration_id=...&channel_id=...&oldest=...&limit=100`
+- `POST /api/slack/test`
+- `POST /api/slack/events`
+
+## Security Controls
+- OAuth `state` with TTL (CSRF defense)
+- `client_secret` used only server-to-server in `oauth.v2.access`
+- Tokens encrypted at rest via Fernet (`TOKEN_ENCRYPTION_KEY`)
+- Slack API calls server-side only
+- Slack request signature verification for events endpoint
+- Per-org integration access isolation
+- Audit logging on install/channel/messages/test/events actions
+
+## Tests (TDD)
+Backend Slack tests:
+```bash
+backend/.venv/bin/pytest backend/tests/slack -q
+```
+
+Frontend Slack page tests:
+```bash
+cd frontend
+npm test -- src/ui/features/slack/slack-integration-page-client.test.tsx
+```

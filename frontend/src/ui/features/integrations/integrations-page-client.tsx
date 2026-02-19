@@ -22,23 +22,36 @@ type FeedbackState = {
   message: string;
 } | null;
 
-function formatStatusLabel(
-  status: ReturnType<typeof resolveSlackIntegrationStatus>,
-) {
-  if (status === "active") {
-    return "Slack Active";
-  }
-  if (status === "degraded") {
-    return "Degraded";
-  }
-  if (status === "expired") {
-    return "Expired";
-  }
-  if (status === "disabled") {
-    return "Disabled";
-  }
-  return "Failed";
-}
+const SLACK_STATUS_UI: Record<
+  ReturnType<typeof resolveSlackIntegrationStatus>,
+  { label: string; className: string }
+> = {
+  active: {
+    label: "Slack Active",
+    className:
+      "rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs uppercase tracking-wide text-emerald-800",
+  },
+  degraded: {
+    label: "Degraded",
+    className:
+      "rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs uppercase tracking-wide text-amber-800",
+  },
+  expired: {
+    label: "Expired",
+    className:
+      "rounded-md border border-orange-200 bg-orange-50 px-2 py-1 text-xs uppercase tracking-wide text-orange-800",
+  },
+  disabled: {
+    label: "Disabled",
+    className:
+      "rounded-md border border-slate-300 bg-slate-100 px-2 py-1 text-xs uppercase tracking-wide text-slate-700",
+  },
+  failed: {
+    label: "Failed",
+    className:
+      "rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs uppercase tracking-wide text-rose-800",
+  },
+};
 
 export function IntegrationsPageClient() {
   const router = useRouter();
@@ -81,9 +94,9 @@ export function IntegrationsPageClient() {
       : "";
   const isSlackOAuthConnected = Boolean(
     slackIntegration &&
-      (slackIntegration.tokenExpiresAt !== null ||
-        (slackChannelIdFromConfig.trim().length > 0 &&
-          slackChannelIdFromConfig !== "__pending__")),
+    (slackIntegration.tokenExpiresAt !== null ||
+      (slackChannelIdFromConfig.trim().length > 0 &&
+        slackChannelIdFromConfig !== "__pending__")),
   );
   const shouldFetchSlackChannels =
     slackIntegrationId.trim().length > 0 &&
@@ -102,20 +115,29 @@ export function IntegrationsPageClient() {
       return;
     }
 
-    const onboarding = searchParams.get("onboarding");
     const integrationId = searchParams.get("integrationId");
-    if (
-      onboarding !== "resume" ||
-      !integrationId ||
-      integrationId.trim().length === 0
-    ) {
+    const onboarding = searchParams.get("onboarding");
+    const step = searchParams.get("step");
+    const oauthStatus = searchParams.get("oauth");
+    const hasResumeSignal =
+      (integrationId && integrationId.trim().length > 0) ||
+      onboarding === "resume" ||
+      step !== null ||
+      oauthStatus !== null;
+
+    if (!hasResumeSignal) {
+      return;
+    }
+
+    if (!integrationId || integrationId.trim().length === 0) {
+      hasAppliedResume.current = true;
+      router.replace("/integrations");
       return;
     }
 
     hasAppliedResume.current = true;
     setResumeIntegrationId(integrationId);
 
-    const oauthStatus = searchParams.get("oauth");
     if (oauthStatus === "success") {
       setIsResumeOauthSuccess(true);
       setFeedback({
@@ -180,17 +202,20 @@ export function IntegrationsPageClient() {
   }
 
   const lastDelivery = deliveriesQuery.data?.[0];
-  const resolvedStatus = resolveSlackIntegrationStatus(
-    {
-      isActive: slackIntegration?.isActive ?? true,
-      lastError: slackIntegration?.lastError ?? "",
-      tokenExpiresAt: slackIntegration?.tokenExpiresAt ?? null,
-    },
-    lastDelivery,
-  );
-  const statusLabel = didSendTestSucceed
-    ? "Slack Active"
-    : formatStatusLabel(resolvedStatus);
+  const resolvedStatus =
+    slackIntegration === null
+      ? "disabled"
+      : resolveSlackIntegrationStatus(
+          {
+            isActive: slackIntegration.isActive,
+            lastError: slackIntegration.lastError,
+            tokenExpiresAt: slackIntegration.tokenExpiresAt,
+          },
+          lastDelivery,
+        );
+  const statusUi = didSendTestSucceed
+    ? SLACK_STATUS_UI.active
+    : SLACK_STATUS_UI[resolvedStatus];
 
   const channelName =
     (slackChannelsQuery.data ?? []).find(
@@ -348,9 +373,7 @@ export function IntegrationsPageClient() {
               </h3>
               <p className="text-sm text-slate-600">Workspace connection</p>
             </div>
-            <span className="rounded-md border border-slate-300 px-2 py-1 text-xs uppercase tracking-wide text-slate-700">
-              {statusLabel}
-            </span>
+            <span className={statusUi.className}>{statusUi.label}</span>
           </div>
 
           <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
