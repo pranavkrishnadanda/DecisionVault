@@ -141,6 +141,12 @@ export async function updateIntegration(
   return mapIntegration(data);
 }
 
+export async function deleteIntegration(integrationId: string): Promise<void> {
+  await apiFetch<void>(`/api/v1/integrations/${integrationId}/`, {
+    method: "DELETE",
+  });
+}
+
 export async function getSlackInstallUrl(
   integrationId: string,
   redirectUri: string,

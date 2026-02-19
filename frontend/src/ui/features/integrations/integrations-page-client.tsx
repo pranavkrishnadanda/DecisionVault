@@ -6,6 +6,7 @@ import { resolveIntegrationHealth } from "@/domain/integration";
 import { useAccessControl } from "@/hooks/use-access-control";
 import {
   useCreateIntegrationMutation,
+  useDeleteIntegrationMutation,
   useIntegrationsQuery,
   useIntegrationTestDeliveryMutation,
   useSlackChannelsQuery,
@@ -52,6 +53,7 @@ export function IntegrationsPageClient() {
     isAuthenticated && canReadIntegrations,
   );
   const createIntegrationMutation = useCreateIntegrationMutation();
+  const deleteIntegrationMutation = useDeleteIntegrationMutation();
   const updateIntegrationMutation = useUpdateIntegrationMutation();
   const slackConnectMutation = useSlackConnectMutation();
   const [connectingIntegrationId, setConnectingIntegrationId] = useState("");
@@ -245,6 +247,16 @@ export function IntegrationsPageClient() {
         <p className="mt-1 text-sm text-slate-600">
           Manage connector health, Slack OAuth, and trigger coverage.
         </p>
+        {hasRecords && (
+          <button
+            className="mt-3 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            disabled={!canManageIntegrations}
+            onClick={openOnboarding}
+            type="button"
+          >
+            Add integration
+          </button>
+        )}
       </header>
 
       {isLoading && (
@@ -691,6 +703,40 @@ export function IntegrationsPageClient() {
                     type="button"
                   >
                     Test delivery unavailable
+                  </button>
+
+                  <button
+                    className="rounded-md border border-rose-300 px-3 py-2 text-sm font-medium text-rose-700 disabled:cursor-not-allowed disabled:text-rose-300"
+                    disabled={
+                      !canManageIntegrations ||
+                      deleteIntegrationMutation.isPending
+                    }
+                    onClick={() => {
+                      setFeedback(null);
+                      const shouldDelete = window.confirm(
+                        `Remove integration "${integration.name}"?`,
+                      );
+                      if (!shouldDelete) {
+                        return;
+                      }
+                      deleteIntegrationMutation.mutate(integration.id, {
+                        onSuccess: () => {
+                          setFeedback({
+                            type: "success",
+                            message: `${integration.name} removed.`,
+                          });
+                        },
+                        onError: () => {
+                          setFeedback({
+                            type: "error",
+                            message: `Failed to remove ${integration.name}.`,
+                          });
+                        },
+                      });
+                    }}
+                    type="button"
+                  >
+                    Remove {integration.name}
                   </button>
                 </div>
               </li>

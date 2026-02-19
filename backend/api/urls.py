@@ -8,6 +8,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from api.views import (
+    IntegrationDeliveryViewSet,
     IntegrationViewSet,
     LoginView,
     LogoutView,
@@ -28,6 +29,11 @@ router = DefaultRouter()
 router.register(r"decisions", DecisionViewSet, basename="decision")
 router.register(r"saved-views", SavedViewViewSet, basename="saved-view")
 router.register(r"integrations", IntegrationViewSet, basename="integration")
+router.register(
+    r"integrations/(?P<integration_id>[^/.]+)/deliveries",
+    IntegrationDeliveryViewSet,
+    basename="integration-delivery",
+)
 router.register(
     r"webhook-subscriptions",
     WebhookSubscriptionViewSet,

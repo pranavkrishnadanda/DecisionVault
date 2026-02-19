@@ -3,6 +3,7 @@ import * as apiClient from "@/api/client";
 import {
   completeSlackOAuth,
   createIntegration,
+  deleteIntegration,
   getSlackInstallUrl,
   listIntegrations,
   listSlackChannels,
@@ -94,6 +95,18 @@ describe("integrations api", () => {
       body: JSON.stringify({
         is_active: false,
       }),
+    });
+  });
+
+  it("deletes integration", async () => {
+    const apiFetchSpy = vi
+      .spyOn(apiClient, "apiFetch")
+      .mockResolvedValue(undefined);
+
+    await deleteIntegration("int-1");
+
+    expect(apiFetchSpy).toHaveBeenCalledWith("/api/v1/integrations/int-1/", {
+      method: "DELETE",
     });
   });
 

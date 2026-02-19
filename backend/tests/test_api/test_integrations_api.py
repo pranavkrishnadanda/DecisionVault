@@ -1,8 +1,10 @@
+from datetime import timedelta
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -502,3 +504,334 @@ class TestIntegrationAPI:
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_delivery_history_auth_required(self, anonymous_client, admin_a, org_a):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack Dashboard",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "COPS"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+
+        response = anonymous_client.get(
+            f"/api/v1/integrations/{integration.id}/deliveries/"
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_delivery_history_is_org_and_integration_scoped(
+        self, admin_a_client, admin_a, org_a, operator_b, org_b
+    ):
+        integration_a = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack A",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "CA"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-a"}),
+        )
+        other_integration_a = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack A2",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "CA2"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-a2"}),
+        )
+        integration_b = Integration.objects.create(
+            organization=org_b,
+            created_by=operator_b,
+            name="Slack B",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "CB"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-b"}),
+        )
+
+        keep_delivery = IntegrationDelivery.objects.create(
+            organization=org_a,
+            integration=integration_a,
+            event_type="decision.completed",
+            payload={"decision_id": "a-1"},
+            status=IntegrationDelivery.Status.DELIVERED,
+        )
+        IntegrationDelivery.objects.create(
+            organization=org_a,
+            integration=other_integration_a,
+            event_type="decision.completed",
+            payload={"decision_id": "a-2"},
+            status=IntegrationDelivery.Status.FAILED,
+        )
+        IntegrationDelivery.objects.create(
+            organization=org_b,
+            integration=integration_b,
+            event_type="decision.completed",
+            payload={"decision_id": "b-1"},
+            status=IntegrationDelivery.Status.DELIVERED,
+        )
+
+        response = admin_a_client.get(
+            f"/api/v1/integrations/{integration_a.id}/deliveries/"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert set(body.keys()) == {"count", "next", "previous", "results"}
+        assert body["count"] == 1
+        assert body["results"][0]["id"] == str(keep_delivery.id)
+
+    def test_delivery_history_cross_org_returns_404(
+        self, admin_a_client, operator_b, org_b
+    ):
+        integration = Integration.objects.create(
+            organization=org_b,
+            created_by=operator_b,
+            name="Other Org Slack",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "COPS"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+
+        response = admin_a_client.get(
+            f"/api/v1/integrations/{integration.id}/deliveries/"
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_delivery_metrics_returns_status_breakdown(
+        self, admin_a_client, admin_a, org_a
+    ):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack Metrics",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "CMETRICS"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+        IntegrationDelivery.objects.create(
+            organization=org_a,
+            integration=integration,
+            event_type="decision.completed",
+            payload={"decision_id": "a-1"},
+            status=IntegrationDelivery.Status.DELIVERED,
+        )
+        IntegrationDelivery.objects.create(
+            organization=org_a,
+            integration=integration,
+            event_type="decision.failed",
+            payload={"decision_id": "a-2"},
+            status=IntegrationDelivery.Status.FAILED,
+        )
+        IntegrationDelivery.objects.create(
+            organization=org_a,
+            integration=integration,
+            event_type="decision.completed",
+            payload={"decision_id": "a-3"},
+            status=IntegrationDelivery.Status.PENDING,
+            next_retry_at=timezone.now() + timedelta(minutes=2),
+        )
+
+        response = admin_a_client.get(
+            f"/api/v1/integrations/{integration.id}/deliveries/metrics/"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["total"] == 3
+        assert payload["delivered"] == 1
+        assert payload["failed"] == 1
+        assert payload["pending"] == 1
+
+    def test_delivery_detail_includes_attempts_without_secrets(
+        self, admin_a_client, admin_a, org_a
+    ):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack Detail",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "CDETAIL"},
+            credentials_encrypted=encrypt_credentials(
+                {"access_token": "xoxb-secret", "refresh_token": "refresh-secret"}
+            ),
+        )
+        delivery = IntegrationDelivery.objects.create(
+            organization=org_a,
+            integration=integration,
+            event_type="decision.completed",
+            payload={"decision_id": "a-1"},
+            status=IntegrationDelivery.Status.FAILED,
+            attempt_count=1,
+            max_attempts=3,
+            last_error="timeout",
+        )
+        IntegrationDeliveryAttempt.objects.create(
+            organization=org_a,
+            delivery=delivery,
+            attempt_number=1,
+            status=IntegrationDeliveryAttempt.Status.FAILED,
+            error_message="timeout",
+        )
+
+        response = admin_a_client.get(
+            f"/api/v1/integrations/{integration.id}/deliveries/{delivery.id}/"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["id"] == str(delivery.id)
+        assert payload["integration"]["id"] == str(integration.id)
+        assert len(payload["attempts"]) == 1
+        assert "credentials" not in payload
+        assert "credentials_encrypted" not in payload
+
+    def test_viewer_cannot_retry_delivery(self, viewer_a_client, admin_a, org_a):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack Retry",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "CRETRY"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+        delivery = IntegrationDelivery.objects.create(
+            organization=org_a,
+            integration=integration,
+            event_type="decision.completed",
+            payload={"decision_id": "a-1"},
+            status=IntegrationDelivery.Status.FAILED,
+            attempt_count=1,
+        )
+
+        response = viewer_a_client.post(
+            f"/api/v1/integrations/{integration.id}/deliveries/{delivery.id}/retry/",
+            {},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_retry_failed_delivery_requeues(self, admin_a_client, admin_a, org_a):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack Retry",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "CRETRY"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+        delivery = IntegrationDelivery.objects.create(
+            organization=org_a,
+            integration=integration,
+            event_type="decision.completed",
+            payload={"decision_id": "a-1"},
+            status=IntegrationDelivery.Status.FAILED,
+            attempt_count=2,
+            max_attempts=3,
+            last_error="timeout",
+        )
+
+        with patch(
+            "api.services.integration_dispatcher.enqueue_integration_delivery",
+            return_value=True,
+        ) as mock_enqueue:
+            response = admin_a_client.post(
+                f"/api/v1/integrations/{integration.id}/deliveries/{delivery.id}/retry/",
+                {},
+                format="json",
+            )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        mock_enqueue.assert_called_once_with(str(delivery.id))
+
+        delivery.refresh_from_db()
+        assert delivery.status == IntegrationDelivery.Status.PENDING
+        assert delivery.next_retry_at is None
+        assert delivery.last_error == ""
+
+    def test_retry_non_failed_delivery_returns_400(
+        self, admin_a_client, admin_a, org_a
+    ):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack Retry",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "CRETRY"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+        delivery = IntegrationDelivery.objects.create(
+            organization=org_a,
+            integration=integration,
+            event_type="decision.completed",
+            payload={"decision_id": "a-1"},
+            status=IntegrationDelivery.Status.DELIVERED,
+            attempt_count=1,
+        )
+
+        response = admin_a_client.post(
+            f"/api/v1/integrations/{integration.id}/deliveries/{delivery.id}/retry/",
+            {},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "status" in response.json()
+
+    def test_viewer_cannot_cancel_delivery(self, viewer_a_client, admin_a, org_a):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack Cancel",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "CCANCEL"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+        delivery = IntegrationDelivery.objects.create(
+            organization=org_a,
+            integration=integration,
+            event_type="decision.completed",
+            payload={"decision_id": "a-1"},
+            status=IntegrationDelivery.Status.PENDING,
+            attempt_count=0,
+        )
+
+        response = viewer_a_client.post(
+            f"/api/v1/integrations/{integration.id}/deliveries/{delivery.id}/cancel/",
+            {},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_cancel_pending_delivery_marks_failed(self, admin_a_client, admin_a, org_a):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack Cancel",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "CCANCEL"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+        delivery = IntegrationDelivery.objects.create(
+            organization=org_a,
+            integration=integration,
+            event_type="decision.completed",
+            payload={"decision_id": "a-1"},
+            status=IntegrationDelivery.Status.PENDING,
+            attempt_count=0,
+        )
+
+        response = admin_a_client.post(
+            f"/api/v1/integrations/{integration.id}/deliveries/{delivery.id}/cancel/",
+            {},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        delivery.refresh_from_db()
+        assert delivery.status == IntegrationDelivery.Status.FAILED
+        assert delivery.last_error == "cancelled_by_user"
+        assert delivery.next_retry_at is None

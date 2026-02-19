@@ -10,6 +10,8 @@ from api.models import (
     INTEGRATION_EVENT_TYPES,
     WEBHOOK_EVENT_TYPES,
     Integration,
+    IntegrationDelivery,
+    IntegrationDeliveryAttempt,
     IntegrationTrigger,
     OrganizationMembership,
     WebhookDelivery,
@@ -373,5 +375,54 @@ class WebhookDeliveryDetailSerializer(WebhookDeliveryListSerializer):
     class Meta(WebhookDeliveryListSerializer.Meta):
         fields = WebhookDeliveryListSerializer.Meta.fields + [
             "payload",
+            "attempts",
+        ]
+
+
+class IntegrationDeliveryListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = IntegrationDelivery
+        fields = [
+            "id",
+            "event_type",
+            "status",
+            "attempt_count",
+            "max_attempts",
+            "last_attempt_at",
+            "next_retry_at",
+            "last_response_status",
+            "last_error",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class IntegrationDeliveryIntegrationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Integration
+        fields = ["id", "name", "connector_type", "is_active"]
+
+
+class IntegrationDeliveryAttemptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = IntegrationDeliveryAttempt
+        fields = [
+            "id",
+            "attempt_number",
+            "status",
+            "response_status",
+            "error_message",
+            "created_at",
+        ]
+
+
+class IntegrationDeliveryDetailSerializer(IntegrationDeliveryListSerializer):
+    integration = IntegrationDeliveryIntegrationSerializer(read_only=True)
+    attempts = IntegrationDeliveryAttemptSerializer(many=True, read_only=True)
+
+    class Meta(IntegrationDeliveryListSerializer.Meta):
+        fields = IntegrationDeliveryListSerializer.Meta.fields + [
+            "payload",
+            "integration",
             "attempts",
         ]

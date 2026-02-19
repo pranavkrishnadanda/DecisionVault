@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   completeSlackOAuth,
   createIntegration,
+  deleteIntegration,
   getSlackInstallUrl,
   listIntegrations,
   listSlackChannels,
@@ -75,6 +76,19 @@ export function useCreateIntegrationMutation() {
 
   return useMutation({
     mutationFn: (input: CreateIntegrationInput) => createIntegration(input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["integrations"],
+      });
+    },
+  });
+}
+
+export function useDeleteIntegrationMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (integrationId: string) => deleteIntegration(integrationId),
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: ["integrations"],

@@ -3,10 +3,11 @@ from datetime import timedelta
 from django.contrib.auth import authenticate
 from django.core import signing
 from django.http import JsonResponse
+from django.http.response import Http404
 from django.utils import timezone
 from rest_framework import mixins, status
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -16,11 +17,14 @@ from rest_framework.viewsets import GenericViewSet, ModelViewSet
 from api.models import (
     INTEGRATION_EVENT_TYPES,
     Integration,
+    IntegrationDelivery,
     IntegrationTrigger,
     WebhookDelivery,
     WebhookSubscription,
 )
 from api.serializers import (
+    IntegrationDeliveryDetailSerializer,
+    IntegrationDeliveryListSerializer,
     IntegrationSerializer,
     RegisterSerializer,
     SavedViewSerializer,
@@ -29,6 +33,7 @@ from api.serializers import (
     WebhookDeliveryListSerializer,
     WebhookSubscriptionSerializer,
 )
+from api.services import integration_dispatcher
 from api.services.auth_tokens import (
     REFRESH_COOKIE_NAME,
     issue_session_tokens,
@@ -472,6 +477,154 @@ class IntegrationViewSet(ModelViewSet):
             {"accepted": True, "delivery_id": str(delivery.id)},
             status=status.HTTP_200_OK,
         )
+
+
+class IntegrationDeliveryPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = "page_size"
+    max_page_size = 200
+
+
+class IntegrationDeliveryViewSet(
+    mixins.ListModelMixin, mixins.RetrieveModelMixin, GenericViewSet
+):
+    """Organization-scoped integration delivery list API."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = IntegrationDeliveryListSerializer
+    pagination_class = IntegrationDeliveryPagination
+    http_method_names = ["get", "post"]
+
+    def get_serializer_class(self):
+        if self.action in {"retrieve", "detail"}:
+            return IntegrationDeliveryDetailSerializer
+        return IntegrationDeliveryListSerializer
+
+    def get_queryset(self):
+        membership = get_user_membership_or_raise(self.request.user)
+        require_read_role(membership)
+
+        integration_id = self.kwargs.get("integration_id")
+        integration = (
+            scope_queryset_to_membership(
+                Integration.objects.filter(id=integration_id), membership
+            )
+            .only("id")
+            .first()
+        )
+        if integration is None:
+            raise Http404
+
+        return (
+            IntegrationDelivery.objects.filter(
+                organization=membership.organization, integration=integration
+            )
+            .select_related("integration")
+            .order_by("-created_at")
+        )
+
+    @action(detail=False, methods=["get"], url_path="metrics")
+    def metrics(self, request, integration_id=None):
+        queryset = self.get_queryset()
+        payload = {
+            "total": queryset.count(),
+            "pending": queryset.filter(
+                status=IntegrationDelivery.Status.PENDING
+            ).count(),
+            "delivered": queryset.filter(
+                status=IntegrationDelivery.Status.DELIVERED
+            ).count(),
+            "failed": queryset.filter(status=IntegrationDelivery.Status.FAILED).count(),
+        }
+        return Response(payload, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get"], url_path="")
+    def detail(self, request, pk=None, integration_id=None):
+        delivery = (
+            self.get_queryset()
+            .select_related("integration")
+            .prefetch_related("attempts")
+            .filter(id=pk)
+            .first()
+        )
+        if delivery is None:
+            raise NotFound()
+
+        serializer = IntegrationDeliveryDetailSerializer(delivery)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def retrieve(self, request, *args, **kwargs):
+        delivery = (
+            self.get_queryset()
+            .select_related("integration")
+            .prefetch_related("attempts")
+            .filter(id=kwargs.get("pk"))
+            .first()
+        )
+        if delivery is None:
+            raise NotFound()
+
+        serializer = self.get_serializer(delivery)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="retry")
+    def retry(self, request, pk=None, integration_id=None):
+        membership = get_user_membership_or_raise(request.user)
+        require_write_role(membership)
+
+        delivery = self.get_queryset().filter(id=pk).first()
+        if delivery is None:
+            raise NotFound()
+        if delivery.status != IntegrationDelivery.Status.FAILED:
+            raise ValidationError({"status": "Only failed deliveries can be retried."})
+
+        delivery.status = IntegrationDelivery.Status.PENDING
+        delivery.next_retry_at = None
+        delivery.last_error = ""
+        delivery.save(
+            update_fields=["status", "next_retry_at", "last_error", "updated_at"]
+        )
+        integration_dispatcher.enqueue_integration_delivery(str(delivery.id))
+
+        payload = (
+            self.get_queryset()
+            .select_related("integration")
+            .prefetch_related("attempts")
+            .filter(id=delivery.id)
+            .first()
+        )
+        serializer = self.get_serializer(payload)
+        return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["post"], url_path="cancel")
+    def cancel(self, request, pk=None, integration_id=None):
+        membership = get_user_membership_or_raise(request.user)
+        require_write_role(membership)
+
+        delivery = self.get_queryset().filter(id=pk).first()
+        if delivery is None:
+            raise NotFound()
+        if delivery.status != IntegrationDelivery.Status.PENDING:
+            raise ValidationError(
+                {"status": "Only pending deliveries can be cancelled."}
+            )
+
+        delivery.status = IntegrationDelivery.Status.FAILED
+        delivery.last_error = "cancelled_by_user"
+        delivery.next_retry_at = None
+        delivery.save(
+            update_fields=["status", "last_error", "next_retry_at", "updated_at"]
+        )
+
+        payload = (
+            self.get_queryset()
+            .select_related("integration")
+            .prefetch_related("attempts")
+            .filter(id=delivery.id)
+            .first()
+        )
+        serializer = self.get_serializer(payload)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class TablePreferenceDetailView(APIView):

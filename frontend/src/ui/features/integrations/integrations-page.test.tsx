@@ -6,6 +6,7 @@ import { IntegrationsPageClient } from "@/ui/features/integrations/integrations-
 const mockUseSearchParams = vi.fn();
 const mockUseIntegrationsQuery = vi.fn();
 const mockUseUpdateIntegrationMutation = vi.fn();
+const mockUseDeleteIntegrationMutation = vi.fn();
 const mockUseSlackConnectMutation = vi.fn();
 const mockUseSlackChannelsQuery = vi.fn();
 const mockUseCreateIntegrationMutation = vi.fn();
@@ -20,6 +21,8 @@ vi.mock("@/hooks/use-integrations-query", () => ({
     mockUseIntegrationsQuery(...args),
   useUpdateIntegrationMutation: (...args: unknown[]) =>
     mockUseUpdateIntegrationMutation(...args),
+  useDeleteIntegrationMutation: (...args: unknown[]) =>
+    mockUseDeleteIntegrationMutation(...args),
   useSlackConnectMutation: (...args: unknown[]) =>
     mockUseSlackConnectMutation(...args),
   useSlackChannelsQuery: (...args: unknown[]) =>
@@ -41,12 +44,17 @@ describe("integrations page", () => {
 
     mockUseIntegrationsQuery.mockReset();
     mockUseUpdateIntegrationMutation.mockReset();
+    mockUseDeleteIntegrationMutation.mockReset();
     mockUseSlackConnectMutation.mockReset();
     mockUseSlackChannelsQuery.mockReset();
     mockUseCreateIntegrationMutation.mockReset();
     mockUseIntegrationTestDeliveryMutation.mockReset();
 
     mockUseUpdateIntegrationMutation.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    });
+    mockUseDeleteIntegrationMutation.mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
     });
@@ -251,6 +259,79 @@ describe("integrations page", () => {
     expect(
       screen.getByRole("button", { name: /start slack onboarding/i }),
     ).toBeInTheDocument();
+  });
+
+  it("shows add integration CTA when integrations already exist", () => {
+    mockUseIntegrationsQuery.mockReturnValue({
+      data: [
+        {
+          id: "int-1",
+          name: "Slack Ops",
+          connectorType: "slack",
+          config: { channel_id: "COPS" },
+          tokenExpiresAt: null,
+          isActive: true,
+          lastError: "",
+          triggers: [],
+          createdAt: "2026-02-19T00:00:00.000Z",
+          updatedAt: "2026-02-19T00:00:00.000Z",
+        },
+      ],
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<IntegrationsPageClient />);
+
+    fireEvent.click(screen.getByRole("button", { name: /add integration/i }));
+
+    expect(
+      screen.getByRole("heading", { name: /slack onboarding wizard/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("removes integration when confirmed", () => {
+    const mutate = vi.fn();
+    mockUseDeleteIntegrationMutation.mockReturnValue({
+      mutate,
+      isPending: false,
+    });
+    mockUseIntegrationsQuery.mockReturnValue({
+      data: [
+        {
+          id: "int-1",
+          name: "Slack Ops",
+          connectorType: "slack",
+          config: { channel_id: "COPS" },
+          tokenExpiresAt: null,
+          isActive: true,
+          lastError: "",
+          triggers: [],
+          createdAt: "2026-02-19T00:00:00.000Z",
+          updatedAt: "2026-02-19T00:00:00.000Z",
+        },
+      ],
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    const confirmSpy = vi
+      .spyOn(window, "confirm")
+      .mockImplementation(() => true);
+
+    render(<IntegrationsPageClient />);
+
+    fireEvent.click(screen.getByRole("button", { name: /remove slack ops/i }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(mutate).toHaveBeenCalledWith(
+      "int-1",
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+        onError: expect.any(Function),
+      }),
+    );
   });
 
   it("connects to slack from wizard step 2 by auto-creating integration and redirecting to oauth", async () => {
