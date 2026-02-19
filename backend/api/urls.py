@@ -13,6 +13,7 @@ from api.views import (
     RegisterView,
     SavedViewViewSet,
     TablePreferenceDetailView,
+    WebhookSubscriptionViewSet,
     health,
 )
 from decisions.views import DecisionViewSet
@@ -23,6 +24,11 @@ app_name = "api"
 router = DefaultRouter()
 router.register(r"decisions", DecisionViewSet, basename="decision")
 router.register(r"saved-views", SavedViewViewSet, basename="saved-view")
+router.register(
+    r"webhook-subscriptions",
+    WebhookSubscriptionViewSet,
+    basename="webhook-subscription",
+)
 
 urlpatterns = [
     path("", include(router.urls)),

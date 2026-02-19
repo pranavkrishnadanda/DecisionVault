@@ -1,7 +1,7 @@
 # Register your models here.
 from django.contrib import admin
 
-from api.models import Organization, OrganizationMembership
+from api.models import Organization, OrganizationMembership, WebhookSubscription
 
 
 @admin.register(Organization)
@@ -17,3 +17,18 @@ class OrganizationMembershipAdmin(admin.ModelAdmin):
     list_filter = ("role", "organization")
     search_fields = ("user__username", "user__email", "organization__name")
     autocomplete_fields = ("user", "organization")
+
+
+@admin.register(WebhookSubscription)
+class WebhookSubscriptionAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "organization",
+        "target_url",
+        "is_active",
+        "created_by",
+        "updated_at",
+    )
+    list_filter = ("organization", "is_active")
+    search_fields = ("id", "target_url", "created_by__username", "created_by__email")
+    autocomplete_fields = ("organization", "created_by")

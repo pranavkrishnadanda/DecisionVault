@@ -9,14 +9,21 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from api.models import WebhookSubscription
 from api.serializers import (
     OrganizationTokenObtainPairSerializer,
     RegisterSerializer,
     SavedViewSerializer,
     TablePreferenceSerializer,
+    WebhookSubscriptionSerializer,
     inject_access_context_claims,
 )
-from core.permissions import get_user_membership_or_raise, scope_queryset_to_membership
+from core.permissions import (
+    get_user_membership_or_raise,
+    require_read_role,
+    require_write_role,
+    scope_queryset_to_membership,
+)
 from decisions.models import (
     SavedView,
     TableDensity,
@@ -87,6 +94,42 @@ class SavedViewViewSet(ModelViewSet):
 
 class OrganizationTokenObtainPairView(TokenObtainPairView):
     serializer_class = OrganizationTokenObtainPairSerializer
+
+
+class WebhookSubscriptionViewSet(ModelViewSet):
+    """Organization-scoped webhook subscription CRUD."""
+
+    serializer_class = WebhookSubscriptionSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "put", "patch", "delete"]
+
+    def get_queryset(self):
+        membership = get_user_membership_or_raise(self.request.user)
+        require_read_role(membership)
+        queryset = WebhookSubscription.objects.select_related(
+            "organization", "created_by"
+        )
+        return scope_queryset_to_membership(queryset, membership).order_by(
+            "-created_at"
+        )
+
+    def perform_create(self, serializer):
+        membership = get_user_membership_or_raise(self.request.user)
+        require_write_role(membership)
+        serializer.save(
+            organization=membership.organization,
+            created_by=self.request.user,
+        )
+
+    def perform_update(self, serializer):
+        membership = get_user_membership_or_raise(self.request.user)
+        require_write_role(membership)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        membership = get_user_membership_or_raise(self.request.user)
+        require_write_role(membership)
+        instance.delete()
 
 
 class TablePreferenceDetailView(APIView):

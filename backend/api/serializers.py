@@ -6,7 +6,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from api.models import OrganizationMembership
+from api.models import WEBHOOK_EVENT_TYPES, OrganizationMembership, WebhookSubscription
 from decisions.models import DecisionStatus, SavedView, TableDensity, TablePreference
 
 User = get_user_model()
@@ -193,3 +193,44 @@ class TablePreferenceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"density": "Invalid density."})
 
         return attrs
+
+
+class WebhookSubscriptionSerializer(serializers.ModelSerializer):
+    """Serializer for organization-scoped webhook subscriptions."""
+
+    class Meta:
+        model = WebhookSubscription
+        fields = [
+            "id",
+            "target_url",
+            "events",
+            "is_active",
+            "signing_secret",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+        extra_kwargs = {
+            "signing_secret": {"write_only": True},
+        }
+
+    def validate_signing_secret(self, value: str) -> str:
+        if not isinstance(value, str) or len(value.strip()) < 12:
+            raise serializers.ValidationError(
+                "signing_secret must be at least 12 characters."
+            )
+        return value.strip()
+
+    def validate_events(self, value: list[str]) -> list[str]:
+        if not isinstance(value, list) or not value:
+            raise serializers.ValidationError("events must be a non-empty list.")
+        if any(not isinstance(item, str) for item in value):
+            raise serializers.ValidationError("events entries must be strings.")
+
+        allowed = set(WEBHOOK_EVENT_TYPES)
+        unknown = [event for event in value if event not in allowed]
+        if unknown:
+            raise serializers.ValidationError("events contain unsupported values.")
+
+        normalized = list(dict.fromkeys(value))
+        return normalized
