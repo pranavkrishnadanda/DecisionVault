@@ -1,24 +1,22 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { apiFetch } from "@/api/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as apiClient from "@/api/client";
 import {
   getWebhookMetrics,
   getWebhookTimeline,
   listWebhookDeliveries,
 } from "@/api/webhook-ops";
 
-vi.mock("@/api/client", () => ({
-  apiFetch: vi.fn(),
-}));
-
-const apiFetchMock = apiFetch as unknown as ReturnType<typeof vi.fn>;
-
 describe("webhook ops api", () => {
   beforeEach(() => {
-    apiFetchMock.mockReset();
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("maps webhook metrics payload", async () => {
-    apiFetchMock.mockResolvedValue({
+    const apiFetchSpy = vi.spyOn(apiClient, "apiFetch").mockResolvedValue({
       delivery_success_rate: 97,
       retry_count: 5,
       dlq_count: 1,
@@ -30,7 +28,7 @@ describe("webhook ops api", () => {
 
     const result = await getWebhookMetrics();
 
-    expect(apiFetchMock).toHaveBeenCalledWith(
+    expect(apiFetchSpy).toHaveBeenCalledWith(
       "/api/v1/webhook-deliveries/metrics/",
     );
     expect(result).toEqual({
@@ -45,7 +43,7 @@ describe("webhook ops api", () => {
   });
 
   it("maps webhook delivery list payload", async () => {
-    apiFetchMock.mockResolvedValue({
+    const apiFetchSpy = vi.spyOn(apiClient, "apiFetch").mockResolvedValue({
       results: [
         {
           id: "d-1",
@@ -61,7 +59,7 @@ describe("webhook ops api", () => {
 
     const result = await listWebhookDeliveries(20);
 
-    expect(apiFetchMock).toHaveBeenCalledWith(
+    expect(apiFetchSpy).toHaveBeenCalledWith(
       "/api/v1/webhook-deliveries/?page_size=20",
     );
     expect(result).toEqual([
@@ -78,9 +76,10 @@ describe("webhook ops api", () => {
   });
 
   it("does not call timeline endpoint when delivery id is invalid", async () => {
+    const apiFetchSpy = vi.spyOn(apiClient, "apiFetch");
     const result = await getWebhookTimeline("null");
 
-    expect(apiFetchMock).not.toHaveBeenCalled();
+    expect(apiFetchSpy).not.toHaveBeenCalled();
     expect(result).toEqual({
       deliveryId: "",
       status: "idle",

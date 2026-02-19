@@ -20,9 +20,8 @@ afterEach(() => {
 
 describe("apiFetch auth refresh behavior", () => {
   it("retries once after 401 by refreshing session", async () => {
-    const refreshSession = vi
-      .spyOn(useAuthStore.getState(), "refreshSession")
-      .mockResolvedValue("new-access-token");
+    const refreshSession = vi.fn().mockResolvedValue("new-access-token");
+    useAuthStore.setState({ refreshSession });
 
     fetchMock
       .mockResolvedValueOnce(
@@ -46,7 +45,8 @@ describe("apiFetch auth refresh behavior", () => {
   });
 
   it("clears session and throws when refresh fails after 401", async () => {
-    vi.spyOn(useAuthStore.getState(), "refreshSession").mockResolvedValue(null);
+    const refreshSession = vi.fn().mockResolvedValue(null);
+    useAuthStore.setState({ refreshSession });
 
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ detail: "Unauthorized" }), {
@@ -58,6 +58,7 @@ describe("apiFetch auth refresh behavior", () => {
     await expect(apiFetch("/api/v1/decisions/")).rejects.toBeInstanceOf(
       ApiError,
     );
+    expect(refreshSession).toHaveBeenCalledTimes(1);
     expect(useAuthStore.getState().sessionToken).toBeNull();
   });
 });
