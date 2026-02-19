@@ -13,6 +13,7 @@ from api.views import (
     RegisterView,
     SavedViewViewSet,
     TablePreferenceDetailView,
+    WebhookDeliveryViewSet,
     WebhookSubscriptionViewSet,
     health,
 )
@@ -28,6 +29,11 @@ router.register(
     r"webhook-subscriptions",
     WebhookSubscriptionViewSet,
     basename="webhook-subscription",
+)
+router.register(
+    r"webhook-deliveries",
+    WebhookDeliveryViewSet,
+    basename="webhook-delivery",
 )
 
 urlpatterns = [

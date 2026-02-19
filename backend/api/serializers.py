@@ -6,7 +6,13 @@ from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from api.models import WEBHOOK_EVENT_TYPES, OrganizationMembership, WebhookSubscription
+from api.models import (
+    WEBHOOK_EVENT_TYPES,
+    OrganizationMembership,
+    WebhookDelivery,
+    WebhookDeliveryAttempt,
+    WebhookSubscription,
+)
 from decisions.models import DecisionStatus, SavedView, TableDensity, TablePreference
 
 User = get_user_model()
@@ -234,3 +240,54 @@ class WebhookSubscriptionSerializer(serializers.ModelSerializer):
 
         normalized = list(dict.fromkeys(value))
         return normalized
+
+
+class WebhookDeliverySubscriptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WebhookSubscription
+        fields = ["id", "target_url", "is_active"]
+
+
+class WebhookDeliveryAttemptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WebhookDeliveryAttempt
+        fields = [
+            "id",
+            "attempt_number",
+            "status",
+            "response_status",
+            "response_request_id",
+            "error_message",
+            "created_at",
+        ]
+
+
+class WebhookDeliveryListSerializer(serializers.ModelSerializer):
+    subscription = WebhookDeliverySubscriptionSerializer(read_only=True)
+
+    class Meta:
+        model = WebhookDelivery
+        fields = [
+            "id",
+            "event_type",
+            "status",
+            "attempt_count",
+            "max_attempts",
+            "last_attempt_at",
+            "next_retry_at",
+            "last_response_status",
+            "last_error",
+            "created_at",
+            "updated_at",
+            "subscription",
+        ]
+
+
+class WebhookDeliveryDetailSerializer(WebhookDeliveryListSerializer):
+    attempts = WebhookDeliveryAttemptSerializer(many=True, read_only=True)
+
+    class Meta(WebhookDeliveryListSerializer.Meta):
+        fields = WebhookDeliveryListSerializer.Meta.fields + [
+            "payload",
+            "attempts",
+        ]

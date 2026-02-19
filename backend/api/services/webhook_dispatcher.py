@@ -79,3 +79,35 @@ def dispatch_event_to_webhooks(
         },
     )
     return len(created_deliveries)
+
+
+@transaction.atomic
+def replay_webhook_delivery(delivery: WebhookDelivery) -> bool:
+    """
+    Replay failed delivery by re-queuing the same delivery record.
+
+    Ensures there is at least one additional allowed attempt for the worker.
+    """
+    locked_delivery = (
+        WebhookDelivery.objects.select_for_update().filter(id=delivery.id).first()
+    )
+    if locked_delivery is None:
+        return False
+
+    if locked_delivery.status != WebhookDelivery.Status.FAILED:
+        raise ValueError("Only failed deliveries can be replayed.")
+
+    if locked_delivery.attempt_count >= locked_delivery.max_attempts:
+        locked_delivery.max_attempts = locked_delivery.attempt_count + 1
+
+    locked_delivery.status = WebhookDelivery.Status.PENDING
+    locked_delivery.next_retry_at = None
+    locked_delivery.save(
+        update_fields=[
+            "status",
+            "next_retry_at",
+            "max_attempts",
+            "updated_at",
+        ]
+    )
+    return enqueue_webhook_delivery(str(locked_delivery.id))
