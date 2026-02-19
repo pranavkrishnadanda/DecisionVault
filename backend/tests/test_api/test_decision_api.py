@@ -255,12 +255,12 @@ class TestSubmitDecision:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_submit_non_owner_forbidden(self, other_client, draft_decision):
+    def test_submit_non_owner_not_found(self, other_client, draft_decision):
         response = other_client.post(
             f"/api/v1/decisions/{draft_decision.id}/submit/", {}, format="json"
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_submit_decision_returns_202(self, api_client, draft_decision):
         """
@@ -419,12 +419,12 @@ class TestRetrieveDecision:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_retrieve_decision_non_owner_forbidden(
+    def test_retrieve_decision_non_owner_not_found(
         self, other_client, created_decision
     ):
         response = other_client.get(f"/api/v1/decisions/{created_decision.id}/")
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_retrieve_decision_returns_200(self, api_client, created_decision):
         """

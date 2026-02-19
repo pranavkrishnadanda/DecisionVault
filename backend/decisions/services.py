@@ -38,6 +38,7 @@ class AuditLogService:
             actor_id: Identifier of the actor
         """
         AuditLog.objects.create(
+            organization=decision.organization,
             entity_type="decision",
             entity_id=decision.id,
             action=AuditAction.CREATE,
@@ -69,6 +70,7 @@ class AuditLogService:
             actor_id: Identifier of the actor
         """
         AuditLog.objects.create(
+            organization=decision.organization,
             entity_type="decision",
             entity_id=decision.id,
             action=AuditAction.SUBMIT,
@@ -93,6 +95,7 @@ class AuditLogService:
     ):
         """Log decision retry operation."""
         AuditLog.objects.create(
+            organization=decision.organization,
             entity_type="decision",
             entity_id=decision.id,
             action=AuditAction.UPDATE,

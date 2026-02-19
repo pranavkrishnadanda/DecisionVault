@@ -13,6 +13,7 @@ from api.serializers import (
     SavedViewSerializer,
     TablePreferenceSerializer,
 )
+from core.permissions import get_user_membership_or_raise, scope_queryset_to_membership
 from decisions.models import (
     SavedView,
     TableDensity,
@@ -71,12 +72,13 @@ class SavedViewViewSet(ModelViewSet):
     http_method_names = ["get", "post", "delete"]
 
     def get_queryset(self):
-        return SavedView.objects.filter(user=self.request.user).order_by(
-            "name", "-created_at"
-        )
+        membership = get_user_membership_or_raise(self.request.user)
+        queryset = scope_queryset_to_membership(SavedView.objects.all(), membership)
+        return queryset.filter(user=self.request.user).order_by("name", "-created_at")
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        membership = get_user_membership_or_raise(self.request.user)
+        serializer.save(user=self.request.user, organization=membership.organization)
 
 
 class TablePreferenceDetailView(APIView):
@@ -101,8 +103,10 @@ class TablePreferenceDetailView(APIView):
             )
 
         defaults = self._default_payload(table)
+        membership = get_user_membership_or_raise(request.user)
         preference, _created = TablePreference.objects.get_or_create(
             user=request.user,
+            organization=membership.organization,
             table=table,
             defaults=defaults,
         )
@@ -116,8 +120,10 @@ class TablePreferenceDetailView(APIView):
             )
 
         defaults = self._default_payload(table)
+        membership = get_user_membership_or_raise(request.user)
         preference, _created = TablePreference.objects.get_or_create(
             user=request.user,
+            organization=membership.organization,
             table=table,
             defaults=defaults,
         )

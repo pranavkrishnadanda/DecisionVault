@@ -13,6 +13,8 @@ import uuid
 from django.db import models
 from django.utils import timezone
 
+from api.models import get_default_organization_id
+
 
 class DecisionStatus(models.TextChoices):
     """Decision lifecycle status choices."""
@@ -65,6 +67,13 @@ class Decision(models.Model):
         editable=False,
         help_text="Unique identifier for the decision",
     )
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="decisions",
+        default=get_default_organization_id,
+        db_index=True,
+    )
     title = models.CharField(
         max_length=255, help_text="Human-readable title for the decision"
     )
@@ -116,6 +125,9 @@ class Decision(models.Model):
         db_table = "decisions"
         ordering = ["-created_at"]
         indexes = [
+            models.Index(fields=["organization"]),
+            models.Index(fields=["organization", "status"]),
+            models.Index(fields=["organization", "updated_at"]),
             models.Index(fields=["status"]),
             models.Index(fields=["created_by"]),
             models.Index(fields=["updated_at"]),
@@ -160,6 +172,13 @@ class Workflow(models.Model):
         default=uuid.uuid4,
         editable=False,
         help_text="Unique identifier for the workflow",
+    )
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="workflows",
+        default=get_default_organization_id,
+        db_index=True,
     )
     decision = models.ForeignKey(
         Decision,
@@ -210,6 +229,7 @@ class Workflow(models.Model):
         db_table = "workflows"
         ordering = ["-created_at"]
         indexes = [
+            models.Index(fields=["organization"]),
             models.Index(fields=["decision", "status"]),
             models.Index(fields=["status"]),
             models.Index(fields=["created_at"]),
@@ -247,6 +267,13 @@ class WorkflowStep(models.Model):
         default=uuid.uuid4,
         editable=False,
         help_text="Unique identifier for the step",
+    )
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="workflow_steps",
+        default=get_default_organization_id,
+        db_index=True,
     )
     workflow = models.ForeignKey(
         Workflow,
@@ -299,6 +326,7 @@ class WorkflowStep(models.Model):
         ordering = ["workflow", "step_number"]
         unique_together = ["workflow", "step_number"]
         indexes = [
+            models.Index(fields=["organization"]),
             models.Index(fields=["workflow", "status"]),
             models.Index(fields=["status"]),
             models.Index(fields=["agent_type", "status"]),
@@ -358,6 +386,13 @@ class AuditLog(models.Model):
         editable=False,
         help_text="Unique identifier for the audit log entry",
     )
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="audit_logs",
+        default=get_default_organization_id,
+        db_index=True,
+    )
     entity_type = models.CharField(
         max_length=50,
         db_index=True,
@@ -402,6 +437,7 @@ class AuditLog(models.Model):
         db_table = "audit_logs"
         ordering = ["timestamp"]
         indexes = [
+            models.Index(fields=["organization"]),
             models.Index(fields=["entity_type", "entity_id"]),
             models.Index(fields=["timestamp"]),
             models.Index(fields=["action"]),
@@ -447,6 +483,13 @@ class SavedView(models.Model):
         editable=False,
         help_text="Unique identifier for the saved view",
     )
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="saved_views",
+        default=get_default_organization_id,
+        db_index=True,
+    )
     user = models.ForeignKey(
         "auth.User",
         on_delete=models.CASCADE,
@@ -467,10 +510,12 @@ class SavedView(models.Model):
         ordering = ["name", "-created_at"]
         constraints = [
             models.UniqueConstraint(
-                fields=["user", "name"], name="unique_user_saved_view_name"
+                fields=["organization", "user", "name"],
+                name="unique_org_user_saved_view_name",
             )
         ]
         indexes = [
+            models.Index(fields=["organization", "user"]),
             models.Index(fields=["user", "created_at"]),
         ]
         verbose_name = "Saved View"
@@ -504,6 +549,13 @@ class TablePreference(models.Model):
         editable=False,
         help_text="Unique identifier for table preference",
     )
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="table_preferences",
+        default=get_default_organization_id,
+        db_index=True,
+    )
     user = models.ForeignKey(
         "auth.User",
         on_delete=models.CASCADE,
@@ -535,10 +587,12 @@ class TablePreference(models.Model):
         db_table = "table_preferences"
         constraints = [
             models.UniqueConstraint(
-                fields=["user", "table"], name="unique_user_table_preference"
+                fields=["organization", "user", "table"],
+                name="unique_org_user_table_preference",
             )
         ]
         indexes = [
+            models.Index(fields=["organization", "user", "table"]),
             models.Index(fields=["user", "table"]),
         ]
         ordering = ["table"]

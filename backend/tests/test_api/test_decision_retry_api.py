@@ -127,12 +127,12 @@ class TestDecisionRetryEndpoint:
 
         assert response.status_code == status.HTTP_202_ACCEPTED
 
-    def test_non_owner_is_forbidden(self, other_client, failed_decision):
+    def test_non_owner_not_found(self, other_client, failed_decision):
         response = other_client.post(
             f"/api/v1/decisions/{failed_decision.id}/retry/", {}, format="json"
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_retry_non_failed_decision_returns_400(self, owner_client, owner_user):
         pending_decision = Decision.objects.create(
