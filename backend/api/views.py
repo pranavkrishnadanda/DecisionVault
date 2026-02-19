@@ -1,4 +1,8 @@
+from datetime import timedelta
+
+from django.core import signing
 from django.http import JsonResponse
+from django.utils import timezone
 from rest_framework import mixins, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -10,8 +14,15 @@ from rest_framework.viewsets import GenericViewSet, ModelViewSet
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from api.models import WebhookDelivery, WebhookSubscription
+from api.models import (
+    INTEGRATION_EVENT_TYPES,
+    Integration,
+    IntegrationTrigger,
+    WebhookDelivery,
+    WebhookSubscription,
+)
 from api.serializers import (
+    IntegrationSerializer,
     OrganizationTokenObtainPairSerializer,
     RegisterSerializer,
     SavedViewSerializer,
@@ -20,6 +31,11 @@ from api.serializers import (
     WebhookDeliveryListSerializer,
     WebhookSubscriptionSerializer,
     inject_access_context_claims,
+)
+from api.services.credentials_vault import encrypt_credentials
+from api.services.integration_oauth import (
+    build_slack_install_url,
+    exchange_slack_oauth_code,
 )
 from api.services.webhook_dispatcher import replay_webhook_delivery
 from api.services.webhook_observability import (
@@ -230,6 +246,126 @@ class WebhookDeliveryViewSet(
         delivery.refresh_from_db()
         serializer = WebhookDeliveryDetailSerializer(delivery)
         return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
+
+
+class IntegrationViewSet(ModelViewSet):
+    """Organization-scoped integrations CRUD + OAuth helpers."""
+
+    serializer_class = IntegrationSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "put", "patch", "delete"]
+
+    def get_queryset(self):
+        membership = get_user_membership_or_raise(self.request.user)
+        require_read_role(membership)
+        queryset = Integration.objects.select_related("organization", "created_by")
+        queryset = queryset.prefetch_related("triggers")
+        return scope_queryset_to_membership(queryset, membership).order_by(
+            "-created_at"
+        )
+
+    def perform_create(self, serializer):
+        membership = get_user_membership_or_raise(self.request.user)
+        require_write_role(membership)
+
+        credentials = serializer.validated_data.pop("credentials", {})
+        triggers = serializer.validated_data.pop("triggers", [])
+        integration = serializer.save(
+            organization=membership.organization,
+            created_by=self.request.user,
+            credentials_encrypted=encrypt_credentials(credentials),
+        )
+
+        trigger_rows = []
+        for item in triggers:
+            if item["event_type"] not in INTEGRATION_EVENT_TYPES:
+                continue
+            trigger_rows.append(
+                IntegrationTrigger(
+                    organization=membership.organization,
+                    integration=integration,
+                    event_type=item["event_type"],
+                    message_template=item.get("message_template", ""),
+                    is_active=item.get("is_active", True),
+                )
+            )
+        if trigger_rows:
+            IntegrationTrigger.objects.bulk_create(trigger_rows)
+
+    def perform_update(self, serializer):
+        membership = get_user_membership_or_raise(self.request.user)
+        require_write_role(membership)
+
+        credentials = serializer.validated_data.pop("credentials", None)
+        integration = serializer.save()
+        if credentials is not None:
+            integration.credentials_encrypted = encrypt_credentials(credentials)
+            integration.save(update_fields=["credentials_encrypted", "updated_at"])
+
+    def perform_destroy(self, instance):
+        membership = get_user_membership_or_raise(self.request.user)
+        require_write_role(membership)
+        instance.delete()
+
+    @action(detail=True, methods=["get"], url_path="slack/install-url")
+    def slack_install_url(self, request, pk=None):
+        membership = get_user_membership_or_raise(request.user)
+        require_write_role(membership)
+        integration = self.get_object()
+        if integration.connector_type != Integration.ConnectorType.SLACK:
+            raise ValidationError({"connector_type": "Integration is not Slack."})
+
+        redirect_uri = request.query_params.get("redirect_uri")
+        if not redirect_uri:
+            raise ValidationError({"redirect_uri": "redirect_uri is required."})
+
+        state = signing.dumps(
+            {
+                "integration_id": str(integration.id),
+                "organization_id": str(membership.organization_id),
+            },
+            salt="slack_oauth_state",
+        )
+        install_url = build_slack_install_url(state=state, redirect_uri=redirect_uri)
+        return Response({"install_url": install_url}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="slack/oauth-callback")
+    def slack_oauth_callback(self, request, pk=None):
+        membership = get_user_membership_or_raise(request.user)
+        require_write_role(membership)
+        integration = self.get_object()
+        if integration.connector_type != Integration.ConnectorType.SLACK:
+            raise ValidationError({"connector_type": "Integration is not Slack."})
+
+        code = request.data.get("code")
+        redirect_uri = request.data.get("redirect_uri")
+        if not code or not redirect_uri:
+            raise ValidationError(
+                {"detail": "code and redirect_uri are required for OAuth callback."}
+            )
+
+        tokens = exchange_slack_oauth_code(code=code, redirect_uri=redirect_uri)
+        credentials = {
+            "access_token": tokens.get("access_token", ""),
+            "refresh_token": tokens.get("refresh_token", ""),
+        }
+        integration.credentials_encrypted = encrypt_credentials(credentials)
+        expires_in = int(tokens.get("expires_in", 0) or 0)
+        integration.token_expires_at = (
+            timezone.now() + timedelta(seconds=expires_in) if expires_in > 0 else None
+        )
+        integration.last_error = ""
+        integration.save(
+            update_fields=[
+                "credentials_encrypted",
+                "token_expires_at",
+                "last_error",
+                "updated_at",
+            ]
+        )
+
+        serializer = self.get_serializer(integration)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class TablePreferenceDetailView(APIView):

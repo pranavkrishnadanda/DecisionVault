@@ -7,7 +7,12 @@ import httpx
 from django.db import transaction
 from django.utils import timezone
 
-from api.models import WebhookDelivery, WebhookDeliveryAttempt
+from api.models import (
+    INTEGRATION_EVENT_WEBHOOK_FAILED,
+    WebhookDelivery,
+    WebhookDeliveryAttempt,
+)
+from api.services.integration_dispatcher import dispatch_event_to_integrations
 from api.services.webhook_dispatcher import enqueue_webhook_dead_letter
 from api.services.webhook_observability import (
     log_delivery_event,
@@ -115,6 +120,15 @@ def _finalize_terminal_failure(delivery: WebhookDelivery, reason: str) -> None:
         previous_state=None,
         current_state={"status": delivery.status},
         metadata={"reason": reason},
+    )
+    dispatch_event_to_integrations(
+        organization=delivery.organization,
+        event_type=INTEGRATION_EVENT_WEBHOOK_FAILED,
+        payload={
+            "delivery_id": str(delivery.id),
+            "subscription_id": str(delivery.subscription_id),
+            "reason": reason,
+        },
     )
 
 

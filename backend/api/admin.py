@@ -2,6 +2,10 @@
 from django.contrib import admin
 
 from api.models import (
+    Integration,
+    IntegrationDelivery,
+    IntegrationDeliveryAttempt,
+    IntegrationTrigger,
     Organization,
     OrganizationMembership,
     WebhookDelivery,
@@ -70,4 +74,68 @@ class WebhookDeliveryAttemptAdmin(admin.ModelAdmin):
     )
     list_filter = ("organization", "status")
     search_fields = ("id", "delivery__id", "response_request_id")
+    autocomplete_fields = ("organization", "delivery")
+
+
+@admin.register(Integration)
+class IntegrationAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "organization",
+        "name",
+        "connector_type",
+        "is_active",
+        "token_expires_at",
+        "updated_at",
+    )
+    list_filter = ("organization", "connector_type", "is_active")
+    search_fields = ("id", "name", "created_by__username", "created_by__email")
+    autocomplete_fields = ("organization", "created_by")
+
+
+@admin.register(IntegrationTrigger)
+class IntegrationTriggerAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "organization",
+        "integration",
+        "event_type",
+        "is_active",
+        "updated_at",
+    )
+    list_filter = ("organization", "event_type", "is_active")
+    search_fields = ("id", "integration__name", "event_type")
+    autocomplete_fields = ("organization", "integration")
+
+
+@admin.register(IntegrationDelivery)
+class IntegrationDeliveryAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "organization",
+        "integration",
+        "event_type",
+        "status",
+        "attempt_count",
+        "max_attempts",
+        "updated_at",
+    )
+    list_filter = ("organization", "status", "event_type")
+    search_fields = ("id", "integration__name", "event_type")
+    autocomplete_fields = ("organization", "integration", "trigger")
+
+
+@admin.register(IntegrationDeliveryAttempt)
+class IntegrationDeliveryAttemptAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "organization",
+        "delivery",
+        "attempt_number",
+        "status",
+        "response_status",
+        "created_at",
+    )
+    list_filter = ("organization", "status")
+    search_fields = ("id", "delivery__id", "error_message")
     autocomplete_fields = ("organization", "delivery")

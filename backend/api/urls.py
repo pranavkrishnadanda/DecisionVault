@@ -9,6 +9,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from api.views import (
+    IntegrationViewSet,
     OrganizationTokenObtainPairView,
     RegisterView,
     SavedViewViewSet,
@@ -25,6 +26,7 @@ app_name = "api"
 router = DefaultRouter()
 router.register(r"decisions", DecisionViewSet, basename="decision")
 router.register(r"saved-views", SavedViewViewSet, basename="saved-view")
+router.register(r"integrations", IntegrationViewSet, basename="integration")
 router.register(
     r"webhook-subscriptions",
     WebhookSubscriptionViewSet,

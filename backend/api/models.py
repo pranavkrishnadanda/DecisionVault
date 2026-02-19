@@ -84,6 +84,16 @@ WEBHOOK_EVENT_TYPES = (
     WEBHOOK_EVENT_DECISION_COMPLETED,
 )
 
+INTEGRATION_EVENT_DECISION_FAILED = "decision.failed"
+INTEGRATION_EVENT_DECISION_COMPLETED = "decision.completed"
+INTEGRATION_EVENT_WEBHOOK_FAILED = "webhook.failed"
+
+INTEGRATION_EVENT_TYPES = (
+    INTEGRATION_EVENT_DECISION_FAILED,
+    INTEGRATION_EVENT_DECISION_COMPLETED,
+    INTEGRATION_EVENT_WEBHOOK_FAILED,
+)
+
 
 class WebhookSubscription(models.Model):
     """Organization-scoped endpoint registration for outbound events."""
@@ -204,6 +214,191 @@ class WebhookDeliveryAttempt(models.Model):
             models.UniqueConstraint(
                 fields=["delivery", "attempt_number"],
                 name="unique_webhook_delivery_attempt_number",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.delivery_id}:{self.attempt_number}:{self.status}"
+
+
+class Integration(models.Model):
+    """Organization-scoped external connector configuration."""
+
+    class ConnectorType(models.TextChoices):
+        SLACK = "slack", "Slack"
+        TEAMS = "teams", "Teams"
+        EMAIL = "email", "Email"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="integrations",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="integrations",
+    )
+    name = models.CharField(max_length=120)
+    connector_type = models.CharField(max_length=24, choices=ConnectorType.choices)
+    config = models.JSONField(default=dict)
+    credentials_encrypted = models.TextField(default="")
+    token_expires_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    last_error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "integrations"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "name"],
+                name="unique_integration_name_per_org",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["organization", "connector_type"]),
+            models.Index(fields=["organization", "is_active"]),
+            models.Index(fields=["organization", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.organization_id}:{self.connector_type}:{self.name}"
+
+
+class IntegrationTrigger(models.Model):
+    """Organization-scoped event trigger bound to a connector."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="integration_triggers",
+    )
+    integration = models.ForeignKey(
+        "api.Integration",
+        on_delete=models.CASCADE,
+        related_name="triggers",
+    )
+    event_type = models.CharField(max_length=120)
+    message_template = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "integration_triggers"
+        ordering = ["event_type", "created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["integration", "event_type"],
+                name="unique_integration_trigger_event",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["organization", "event_type", "is_active"]),
+            models.Index(fields=["integration", "is_active"]),
+        ]
+
+    def __str__(self):
+        return f"{self.integration_id}:{self.event_type}:{self.is_active}"
+
+
+class IntegrationDelivery(models.Model):
+    """Persistent integration delivery job for async processing and retries."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        DELIVERED = "delivered", "Delivered"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="integration_deliveries",
+    )
+    integration = models.ForeignKey(
+        "api.Integration",
+        on_delete=models.CASCADE,
+        related_name="deliveries",
+    )
+    trigger = models.ForeignKey(
+        "api.IntegrationTrigger",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="deliveries",
+    )
+    event_type = models.CharField(max_length=120)
+    payload = models.JSONField(default=dict)
+    status = models.CharField(
+        max_length=24,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    attempt_count = models.PositiveIntegerField(default=0)
+    max_attempts = models.PositiveIntegerField(default=3)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    next_retry_at = models.DateTimeField(null=True, blank=True)
+    last_response_status = models.PositiveIntegerField(null=True, blank=True)
+    last_error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "integration_deliveries"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["organization", "status"]),
+            models.Index(fields=["organization", "created_at"]),
+            models.Index(fields=["integration", "status"]),
+            models.Index(fields=["next_retry_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.organization_id}:{self.integration_id}:{self.event_type}"
+
+
+class IntegrationDeliveryAttempt(models.Model):
+    """Append-only log of integration delivery attempts."""
+
+    class Status(models.TextChoices):
+        SUCCESS = "success", "Success"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="integration_delivery_attempts",
+    )
+    delivery = models.ForeignKey(
+        "api.IntegrationDelivery",
+        on_delete=models.CASCADE,
+        related_name="attempts",
+    )
+    attempt_number = models.PositiveIntegerField()
+    status = models.CharField(max_length=24, choices=Status.choices)
+    response_status = models.PositiveIntegerField(null=True, blank=True)
+    error_message = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "integration_delivery_attempts"
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["organization", "delivery"]),
+            models.Index(fields=["delivery", "attempt_number"]),
+            models.Index(fields=["created_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["delivery", "attempt_number"],
+                name="unique_integration_delivery_attempt_number",
             )
         ]
 

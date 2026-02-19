@@ -7,7 +7,10 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from api.models import (
+    INTEGRATION_EVENT_TYPES,
     WEBHOOK_EVENT_TYPES,
+    Integration,
+    IntegrationTrigger,
     OrganizationMembership,
     WebhookDelivery,
     WebhookDeliveryAttempt,
@@ -240,6 +243,87 @@ class WebhookSubscriptionSerializer(serializers.ModelSerializer):
 
         normalized = list(dict.fromkeys(value))
         return normalized
+
+
+class IntegrationTriggerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = IntegrationTrigger
+        fields = [
+            "id",
+            "event_type",
+            "message_template",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_event_type(self, value: str) -> str:
+        if value not in INTEGRATION_EVENT_TYPES:
+            raise serializers.ValidationError("Unsupported event_type.")
+        return value
+
+
+class IntegrationSerializer(serializers.ModelSerializer):
+    credentials = serializers.JSONField(write_only=True, required=False)
+    triggers = IntegrationTriggerSerializer(many=True, required=False)
+
+    class Meta:
+        model = Integration
+        fields = [
+            "id",
+            "name",
+            "connector_type",
+            "config",
+            "credentials",
+            "token_expires_at",
+            "is_active",
+            "last_error",
+            "triggers",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "token_expires_at",
+            "last_error",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_connector_type(self, value: str) -> str:
+        valid = {choice for choice, _ in Integration.ConnectorType.choices}
+        if value not in valid:
+            raise serializers.ValidationError("Unsupported connector_type.")
+        return value
+
+    def validate(self, attrs):
+        connector_type = attrs.get("connector_type") or getattr(
+            self.instance, "connector_type", None
+        )
+        config = attrs.get("config", getattr(self.instance, "config", {}))
+        if not isinstance(config, dict):
+            raise serializers.ValidationError({"config": "config must be an object."})
+
+        if connector_type == Integration.ConnectorType.SLACK:
+            if not config.get("channel_id"):
+                raise serializers.ValidationError(
+                    {"config": "Slack connector requires channel_id."}
+                )
+        elif connector_type == Integration.ConnectorType.TEAMS:
+            if not config.get("message_template"):
+                raise serializers.ValidationError(
+                    {"config": "Teams connector requires message_template."}
+                )
+        elif connector_type == Integration.ConnectorType.EMAIL:
+            required = ("smtp_host", "from_email", "to_email")
+            missing = [key for key in required if not config.get(key)]
+            if missing:
+                raise serializers.ValidationError(
+                    {"config": f"Email connector missing: {', '.join(missing)}"}
+                )
+
+        return attrs
 
 
 class WebhookDeliverySubscriptionSerializer(serializers.ModelSerializer):
