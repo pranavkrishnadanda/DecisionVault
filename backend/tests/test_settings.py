@@ -12,6 +12,7 @@ This is critical for:
 """
 
 import os
+
 import pytest
 from django.conf import settings
 
@@ -22,7 +23,7 @@ class TestEnvironmentVariables:
     def test_secret_key_from_env(self):
         """
         SECRET_KEY must be configurable via environment.
-        
+
         Security risk if hardcoded in production.
         """
         # In test settings, this comes from pytest-env
@@ -31,7 +32,7 @@ class TestEnvironmentVariables:
     def test_debug_from_env(self):
         """
         DEBUG must be configurable via environment.
-        
+
         Should be False in production.
         """
         # Test settings force DEBUG=True
@@ -40,7 +41,7 @@ class TestEnvironmentVariables:
     def test_allowed_hosts_from_env(self):
         """
         ALLOWED_HOSTS must be configurable via environment.
-        
+
         Required for production deployment.
         """
         assert isinstance(settings.ALLOWED_HOSTS, list)
@@ -49,7 +50,7 @@ class TestEnvironmentVariables:
     def test_db_host_from_env(self):
         """
         Database host must be configurable via environment.
-        
+
         Different for local, Docker, and production.
         """
         db_config = settings.DATABASES["default"]
@@ -74,7 +75,7 @@ class TestEnvironmentVariables:
     def test_db_password_from_env(self):
         """
         Database password must be configurable via environment.
-        
+
         Never hardcode credentials.
         """
         db_config = settings.DATABASES["default"]
@@ -104,6 +105,21 @@ class TestEnvironmentVariables:
         """
         assert settings.RABBITMQ_PORT == int(os.getenv("RABBITMQ_PORT", "5672"))
 
+    def test_slack_oauth_credentials_from_env(self):
+        """
+        Slack OAuth credentials must be configurable via environment.
+
+        Required for building valid Slack install URLs.
+        """
+        assert settings.SLACK_CLIENT_ID == os.getenv(
+            "SLACK_CLIENT_ID",
+            "slack-client-id",
+        )
+        assert settings.SLACK_CLIENT_SECRET == os.getenv(
+            "SLACK_CLIENT_SECRET",
+            "slack-client-secret",
+        )
+
 
 class TestSettingsStructure:
     """Test that settings have proper structure."""
@@ -114,7 +130,7 @@ class TestSettingsStructure:
         """
         db_config = settings.DATABASES["default"]
         required_keys = ["ENGINE", "NAME", "USER", "PASSWORD", "HOST", "PORT"]
-        
+
         for key in required_keys:
             assert key in db_config, f"Missing required DB config key: {key}"
 
@@ -124,7 +140,7 @@ class TestSettingsStructure:
         """
         cache_config = settings.CACHES["default"]
         required_keys = ["BACKEND", "LOCATION"]
-        
+
         for key in required_keys:
             assert key in cache_config, f"Missing required cache config key: {key}"
 

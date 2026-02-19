@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
+import { resolveIntegrationIdFromSlackState } from "@/domain/slack-oauth";
 import { useAccessControl } from "@/hooks/use-access-control";
 import { useCompleteSlackOAuthMutation } from "@/hooks/use-integrations-query";
 import { selectSessionToken, useAuthStore } from "@/state/auth-store";
@@ -14,14 +15,8 @@ function buildCallbackRedirect(
   return `/integrations?onboarding=resume&integrationId=${integrationId}&step=triggers&oauth=${status}`;
 }
 
-function resolveRedirectUri(searchParams: URLSearchParams) {
-  const callbackUrl = new URL(`${window.location.origin}/oauth/slack/callback`);
-  const params = new URLSearchParams(searchParams);
-  params.delete("code");
-  params.delete("state");
-  params.delete("error");
-  callbackUrl.search = params.toString();
-  return callbackUrl.toString();
+function resolveRedirectUri() {
+  return `${window.location.origin}/oauth/slack/callback`;
 }
 
 export function SlackOAuthCallbackClient() {
@@ -41,7 +36,9 @@ export function SlackOAuthCallbackClient() {
     }
     hasProcessed.current = true;
 
-    const integrationId = searchParams.get("integration_id");
+    const integrationId =
+      searchParams.get("integration_id") ??
+      resolveIntegrationIdFromSlackState(searchParams.get("state"));
     const oauthError = searchParams.get("error");
     const code = searchParams.get("code");
 
@@ -55,7 +52,7 @@ export function SlackOAuthCallbackClient() {
       return;
     }
 
-    const redirectUri = resolveRedirectUri(searchParams);
+    const redirectUri = resolveRedirectUri();
     void completeSlackOAuthMutation
       .mutateAsync({
         integrationId,

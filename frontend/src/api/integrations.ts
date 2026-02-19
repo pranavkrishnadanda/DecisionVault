@@ -1,6 +1,7 @@
 import { apiFetch } from "@/api/client";
 import type {
   CreateIntegrationInput,
+  IntegrationDeliveryRecord,
   IntegrationRecord,
   IntegrationTestDeliveryResult,
   IntegrationTriggerRecord,
@@ -46,6 +47,14 @@ interface TestIntegrationDeliveryApiResponse {
   accepted?: boolean;
   delivery_id?: string | null;
   id?: string | null;
+}
+
+interface IntegrationDeliveriesResponse {
+  results?: Array<{
+    id?: string;
+    status?: "pending" | "delivered" | "failed";
+    created_at?: string;
+  }>;
 }
 
 function mapTrigger(
@@ -231,4 +240,40 @@ export async function runSlackTestDelivery(
     accepted: Boolean(data.accepted ?? true),
     deliveryId: data.delivery_id ?? data.id ?? null,
   };
+}
+
+export async function listIntegrationDeliveries(
+  integrationId: string,
+  pageSize = 20,
+): Promise<IntegrationDeliveryRecord[]> {
+  const query = new URLSearchParams({ page_size: String(pageSize) });
+  const data = await apiFetch<IntegrationDeliveriesResponse>(
+    `/api/v1/integrations/${integrationId}/deliveries/?${query.toString()}`,
+  );
+  if (!Array.isArray(data.results)) {
+    return [];
+  }
+  return data.results
+    .filter(
+      (
+        item,
+      ): item is {
+        id: string;
+        status: "pending" | "delivered" | "failed";
+        created_at: string;
+      } =>
+        Boolean(
+          item &&
+            typeof item.id === "string" &&
+            (item.status === "pending" ||
+              item.status === "delivered" ||
+              item.status === "failed") &&
+            typeof item.created_at === "string",
+        ),
+    )
+    .map((item) => ({
+      id: item.id,
+      status: item.status,
+      createdAt: item.created_at,
+    }));
 }

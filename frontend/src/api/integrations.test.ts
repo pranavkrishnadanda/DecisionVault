@@ -5,6 +5,7 @@ import {
   createIntegration,
   deleteIntegration,
   getSlackInstallUrl,
+  listIntegrationDeliveries,
   listIntegrations,
   listSlackChannels,
   runSlackTestDelivery,
@@ -268,5 +269,33 @@ describe("integrations api", () => {
       accepted: true,
       deliveryId: "delivery-9",
     });
+  });
+
+  it("lists integration deliveries from paginated payload", async () => {
+    const apiFetchSpy = vi.spyOn(apiClient, "apiFetch").mockResolvedValue({
+      count: 1,
+      next: null,
+      previous: null,
+      results: [
+        {
+          id: "delivery-1",
+          status: "delivered",
+          created_at: "2026-02-19T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const result = await listIntegrationDeliveries("int-2", 1);
+
+    expect(apiFetchSpy).toHaveBeenCalledWith(
+      "/api/v1/integrations/int-2/deliveries/?page_size=1",
+    );
+    expect(result).toEqual([
+      {
+        id: "delivery-1",
+        status: "delivered",
+        createdAt: "2026-02-19T00:00:00.000Z",
+      },
+    ]);
   });
 });

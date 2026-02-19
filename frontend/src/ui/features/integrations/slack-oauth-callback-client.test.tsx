@@ -38,7 +38,9 @@ describe("slack oauth callback", () => {
     mockUseAuthStore.mockReset();
 
     mockUseSearchParams.mockReturnValue(
-      new URLSearchParams("code=oauth-code&state=state-1&integration_id=int-2"),
+      new URLSearchParams(
+        "code=oauth-code&state=eyJpbnRlZ3JhdGlvbl9pZCI6ImludC0yIn0:abc123",
+      ),
     );
     mockUseCompleteSlackOAuthMutation.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue({}),
@@ -66,8 +68,7 @@ describe("slack oauth callback", () => {
       expect(mutateAsync).toHaveBeenCalledWith({
         integrationId: "int-2",
         code: "oauth-code",
-        redirectUri:
-          "http://localhost/oauth/slack/callback?integration_id=int-2",
+        redirectUri: "http://localhost/oauth/slack/callback",
       });
       expect(mockReplace).toHaveBeenCalledWith(
         "/integrations?onboarding=resume&integrationId=int-2&step=triggers&oauth=success",

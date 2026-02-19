@@ -4,6 +4,7 @@ import {
   createIntegration,
   deleteIntegration,
   getSlackInstallUrl,
+  listIntegrationDeliveries,
   listIntegrations,
   listSlackChannels,
   runSlackTestDelivery,
@@ -31,6 +32,21 @@ export function useSlackChannelsQuery(integrationId: string, enabled: boolean) {
   return useQuery({
     queryKey: ["integrations", integrationId, "slack", "channels"],
     queryFn: () => listSlackChannels(integrationId),
+    enabled: enabled && integrationId.trim().length > 0,
+    staleTime: 15_000,
+    gcTime: 5 * 60_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useIntegrationDeliveriesQuery(
+  integrationId: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ["integrations", integrationId, "deliveries"],
+    queryFn: () => listIntegrationDeliveries(integrationId, 1),
     enabled: enabled && integrationId.trim().length > 0,
     staleTime: 15_000,
     gcTime: 5 * 60_000,
@@ -114,16 +130,7 @@ export function useSlackConnectMutation() {
     mutationFn: (input: string | SlackConnectMutationInput) => {
       const integrationId =
         typeof input === "string" ? input : input.integrationId;
-      const redirectUrl = new URL(resolveSlackRedirectUri());
-
-      if (typeof input !== "string") {
-        redirectUrl.searchParams.set("integration_id", input.integrationId);
-        if (input.resumeStep) {
-          redirectUrl.searchParams.set("step", input.resumeStep);
-        }
-      }
-
-      return getSlackInstallUrl(integrationId, redirectUrl.toString());
+      return getSlackInstallUrl(integrationId, resolveSlackRedirectUri());
     },
   });
 }

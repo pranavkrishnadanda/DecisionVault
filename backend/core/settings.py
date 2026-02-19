@@ -203,6 +203,14 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
 
+# Slack OAuth configuration
+SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID", "slack-client-id")
+SLACK_CLIENT_SECRET = os.getenv("SLACK_CLIENT_SECRET", "slack-client-secret")
+SLACK_SCOPES = os.getenv(
+    "SLACK_SCOPES",
+    "chat:write,channels:read,channels:join",
+)
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",

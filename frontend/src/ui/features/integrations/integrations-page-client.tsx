@@ -1,47 +1,47 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { resolveIntegrationHealth } from "@/domain/integration";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { resolveSlackIntegrationStatus } from "@/domain/integration";
 import { useAccessControl } from "@/hooks/use-access-control";
 import {
   useCreateIntegrationMutation,
   useDeleteIntegrationMutation,
+  useIntegrationDeliveriesQuery,
   useIntegrationsQuery,
   useIntegrationTestDeliveryMutation,
   useSlackChannelsQuery,
   useSlackConnectMutation,
-  useUpdateIntegrationMutation,
 } from "@/hooks/use-integrations-query";
 import { selectSessionToken, useAuthStore } from "@/state/auth-store";
 import { RetryPanel } from "@/ui/components/errors/retry-panel";
 import { AuthGate } from "@/ui/features/auth/auth-gate";
-
-function formatConnector(connectorType: string) {
-  if (connectorType === "slack") {
-    return "Slack";
-  }
-  if (connectorType === "teams") {
-    return "Teams";
-  }
-  if (connectorType === "email") {
-    return "Email";
-  }
-  return connectorType;
-}
-
-const ONBOARDING_TRIGGERS = [
-  "decision.completed",
-  "decision.failed",
-  "webhook.failed",
-] as const;
 
 type FeedbackState = {
   type: "success" | "error";
   message: string;
 } | null;
 
+function formatStatusLabel(
+  status: ReturnType<typeof resolveSlackIntegrationStatus>,
+) {
+  if (status === "active") {
+    return "Slack Active";
+  }
+  if (status === "degraded") {
+    return "Degraded";
+  }
+  if (status === "expired") {
+    return "Expired";
+  }
+  if (status === "disabled") {
+    return "Disabled";
+  }
+  return "Failed";
+}
+
 export function IntegrationsPageClient() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const sessionToken = useAuthStore(selectSessionToken);
   const { isAccessHydrating, permissions } = useAccessControl();
@@ -54,30 +54,48 @@ export function IntegrationsPageClient() {
   );
   const createIntegrationMutation = useCreateIntegrationMutation();
   const deleteIntegrationMutation = useDeleteIntegrationMutation();
-  const updateIntegrationMutation = useUpdateIntegrationMutation();
   const slackConnectMutation = useSlackConnectMutation();
-  const [connectingIntegrationId, setConnectingIntegrationId] = useState("");
+  const integrationTestDeliveryMutation = useIntegrationTestDeliveryMutation();
+
   const [feedback, setFeedback] = useState<FeedbackState>(null);
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState<1 | 2 | 3>(1);
-  const [onboardingName, setOnboardingName] = useState("");
-  const [selectedSlackChannelId, setSelectedSlackChannelId] = useState("");
-  const [selectedTriggers, setSelectedTriggers] = useState<string[]>([]);
-  const [createdIntegrationId, setCreatedIntegrationId] = useState<
-    string | null
-  >(null);
-  const [testDeliveryError, setTestDeliveryError] = useState<string | null>(
+  const [resumeIntegrationId, setResumeIntegrationId] = useState<string | null>(
     null,
   );
-  const [completionDeliveryId, setCompletionDeliveryId] = useState<
-    string | null
-  >(null);
-  const integrationTestDeliveryMutation = useIntegrationTestDeliveryMutation();
-  const slackChannelsQuery = useSlackChannelsQuery(
-    createdIntegrationId ?? "",
-    isOnboardingOpen && onboardingStep === 2,
-  );
+  const [isResumeOauthSuccess, setIsResumeOauthSuccess] = useState(false);
+  const [selectedSlackChannelId, setSelectedSlackChannelId] = useState("");
+  const [didSendTestSucceed, setDidSendTestSucceed] = useState(false);
+
   const hasAppliedResume = useRef(false);
+
+  const integrations = integrationsQuery.data ?? [];
+  const slackIntegration = useMemo(
+    () => integrations.find((item) => item.connectorType === "slack") ?? null,
+    [integrations],
+  );
+
+  const slackIntegrationId = slackIntegration?.id ?? resumeIntegrationId ?? "";
+
+  const slackChannelIdFromConfig =
+    slackIntegration && typeof slackIntegration.config.channel_id === "string"
+      ? slackIntegration.config.channel_id
+      : "";
+  const isSlackOAuthConnected = Boolean(
+    slackIntegration &&
+      (slackIntegration.tokenExpiresAt !== null ||
+        (slackChannelIdFromConfig.trim().length > 0 &&
+          slackChannelIdFromConfig !== "__pending__")),
+  );
+  const shouldFetchSlackChannels =
+    slackIntegrationId.trim().length > 0 &&
+    (isSlackOAuthConnected || isResumeOauthSuccess);
+  const slackChannelsQuery = useSlackChannelsQuery(
+    slackIntegrationId,
+    shouldFetchSlackChannels,
+  );
+  const deliveriesQuery = useIntegrationDeliveriesQuery(
+    slackIntegrationId,
+    slackIntegrationId.trim().length > 0,
+  );
 
   useEffect(() => {
     if (hasAppliedResume.current || !isAuthenticated || !canReadIntegrations) {
@@ -86,59 +104,46 @@ export function IntegrationsPageClient() {
 
     const onboarding = searchParams.get("onboarding");
     const integrationId = searchParams.get("integrationId");
-    const step = searchParams.get("step");
     if (
       onboarding !== "resume" ||
       !integrationId ||
-      integrationId.trim().length === 0 ||
-      step !== "triggers"
+      integrationId.trim().length === 0
     ) {
       return;
     }
 
     hasAppliedResume.current = true;
-    setIsOnboardingOpen(true);
-    setOnboardingStep(2);
-    setCreatedIntegrationId(integrationId);
-    setSelectedSlackChannelId("");
-    setTestDeliveryError(null);
-    setCompletionDeliveryId(null);
+    setResumeIntegrationId(integrationId);
 
     const oauthStatus = searchParams.get("oauth");
     if (oauthStatus === "success") {
+      setIsResumeOauthSuccess(true);
       setFeedback({
         type: "success",
-        message: "Slack connected successfully. Continue with trigger setup.",
+        message: "Slack connected. Select a channel and send a test.",
       });
     } else if (oauthStatus === "error") {
       setFeedback({
         type: "error",
-        message: "Slack connection failed. Reconnect and retry.",
+        message: "Slack connection failed. Retry workspace connection.",
       });
     }
 
-    const integration = (integrationsQuery.data ?? []).find(
-      (item) => item.id === integrationId,
-    );
-    if (!integration) {
+    router.replace("/integrations");
+  }, [canReadIntegrations, isAuthenticated, router, searchParams]);
+
+  useEffect(() => {
+    if (!slackIntegration || selectedSlackChannelId.trim().length > 0) {
       return;
     }
-
-    setOnboardingName(integration.name);
     const channelId =
-      typeof integration.config.channel_id === "string"
-        ? integration.config.channel_id
+      typeof slackIntegration.config.channel_id === "string"
+        ? slackIntegration.config.channel_id
         : "";
-    setSelectedSlackChannelId(channelId);
-    setSelectedTriggers(
-      integration.triggers.map((trigger) => trigger.eventType),
-    );
-  }, [
-    canReadIntegrations,
-    integrationsQuery.data,
-    isAuthenticated,
-    searchParams,
-  ]);
+    if (channelId.trim().length > 0) {
+      setSelectedSlackChannelId(channelId);
+    }
+  }, [selectedSlackChannelId, slackIntegration]);
 
   if (!isAuthenticated) {
     return (
@@ -174,56 +179,119 @@ export function IntegrationsPageClient() {
     );
   }
 
-  const integrations = integrationsQuery.data ?? [];
-  const hasRecords = integrations.length > 0;
-  const isLoading = integrationsQuery.isPending;
-  const canAdvanceOnboarding = onboardingName.trim().length > 0;
-  const hasSelectedSlackChannel = selectedSlackChannelId.trim().length > 0;
+  const lastDelivery = deliveriesQuery.data?.[0];
+  const resolvedStatus = resolveSlackIntegrationStatus(
+    {
+      isActive: slackIntegration?.isActive ?? true,
+      lastError: slackIntegration?.lastError ?? "",
+      tokenExpiresAt: slackIntegration?.tokenExpiresAt ?? null,
+    },
+    lastDelivery,
+  );
+  const statusLabel = didSendTestSucceed
+    ? "Slack Active"
+    : formatStatusLabel(resolvedStatus);
 
-  function openOnboarding() {
+  const channelName =
+    (slackChannelsQuery.data ?? []).find(
+      (item) => item.id === selectedSlackChannelId,
+    )?.name ??
+    (typeof slackIntegration?.config.channel_id === "string"
+      ? slackIntegration.config.channel_id
+      : "Not selected");
+
+  const lastDeliveryLabel = lastDelivery?.createdAt
+    ? new Date(lastDelivery.createdAt).toLocaleString()
+    : "No deliveries yet";
+
+  async function handleConnectSlackWorkspace() {
     setFeedback(null);
-    setIsOnboardingOpen(true);
-    setOnboardingStep(1);
-    setOnboardingName("");
-    setSelectedSlackChannelId("");
-    setSelectedTriggers([]);
-    setCreatedIntegrationId(null);
-    setTestDeliveryError(null);
-    setCompletionDeliveryId(null);
-  }
-
-  async function runTestDelivery(integrationId: string, channelId?: string) {
     try {
-      const result = await integrationTestDeliveryMutation.mutateAsync(
-        channelId ? { integrationId, channelId } : integrationId,
-      );
-      setTestDeliveryError(null);
-      setCompletionDeliveryId(result.deliveryId);
-      setOnboardingStep(3);
-      setFeedback({
-        type: "success",
-        message: "Test delivery queued successfully.",
+      const integrationId = slackIntegration?.id
+        ? slackIntegration.id
+        : (
+            await createIntegrationMutation.mutateAsync({
+              name: "Slack Workspace",
+              connectorType: "slack",
+              config: { channelId: "__pending__" },
+              triggers: [],
+            })
+          ).id;
+
+      setResumeIntegrationId(integrationId);
+      const installUrl = await slackConnectMutation.mutateAsync({
+        integrationId,
       });
-      return true;
+      window.open(installUrl, "_self");
     } catch {
-      const message = "Integration created, but test delivery failed.";
-      setTestDeliveryError(message);
       setFeedback({
         type: "error",
-        message,
+        message: "Failed to connect Slack workspace.",
       });
-      return false;
     }
   }
 
-  const healthLabels = integrations.reduce<Record<string, string>>(
-    (result, integration) => {
-      const health = resolveIntegrationHealth(integration);
-      result[integration.id] = health;
-      return result;
-    },
-    {},
-  );
+  async function handleAddIntegration() {
+    setFeedback(null);
+    try {
+      const suffix =
+        integrations.filter((item) => item.connectorType === "slack").length +
+        1;
+      const created = await createIntegrationMutation.mutateAsync({
+        name: `Slack Workspace ${suffix}`,
+        connectorType: "slack",
+        config: { channelId: "__pending__" },
+        triggers: [],
+      });
+
+      setResumeIntegrationId(created.id);
+      const installUrl = await slackConnectMutation.mutateAsync({
+        integrationId: created.id,
+      });
+      window.open(installUrl, "_self");
+    } catch {
+      setFeedback({
+        type: "error",
+        message: "Failed to add integration.",
+      });
+    }
+  }
+
+  async function handleSendTest() {
+    if (slackIntegrationId.trim().length === 0) {
+      return;
+    }
+    const channelId = selectedSlackChannelId.trim();
+    if (channelId.length === 0) {
+      return;
+    }
+
+    setFeedback(null);
+    setDidSendTestSucceed(false);
+    try {
+      await integrationTestDeliveryMutation.mutateAsync({
+        integrationId: slackIntegrationId,
+        channelId,
+      });
+      setDidSendTestSucceed(true);
+      setFeedback({
+        type: "success",
+        message: "Slack Active",
+      });
+    } catch {
+      setFeedback({
+        type: "error",
+        message: "Failed to send Slack test delivery.",
+      });
+    }
+  }
+
+  const isConnectPending =
+    createIntegrationMutation.isPending || slackConnectMutation.isPending;
+  const canSendTest =
+    canManageIntegrations &&
+    selectedSlackChannelId.trim().length > 0 &&
+    !integrationTestDeliveryMutation.isPending;
 
   return (
     <section className="space-y-6" data-testid="integrations-panel">
@@ -245,13 +313,15 @@ export function IntegrationsPageClient() {
           Integrations management
         </h2>
         <p className="mt-1 text-sm text-slate-600">
-          Manage connector health, Slack OAuth, and trigger coverage.
+          Connect Slack, choose a channel, and validate delivery health.
         </p>
-        {hasRecords && (
+        {slackIntegration && (
           <button
             className="mt-3 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-            disabled={!canManageIntegrations}
-            onClick={openOnboarding}
+            disabled={!canManageIntegrations || isConnectPending}
+            onClick={() => {
+              void handleAddIntegration();
+            }}
             type="button"
           >
             Add integration
@@ -259,490 +329,142 @@ export function IntegrationsPageClient() {
         )}
       </header>
 
-      {isLoading && (
-        <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-          Loading integrations...
+      {integrationsQuery.isPending && (
+        <section
+          aria-busy="true"
+          className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+        >
+          <div className="h-4 w-40 animate-pulse rounded bg-slate-200" />
+          <div className="mt-3 h-10 w-full animate-pulse rounded bg-slate-200" />
         </section>
       )}
 
-      {!isLoading && !hasRecords && (
-        <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
-          <p>No integrations configured yet.</p>
-          <p className="mt-2 text-xs text-slate-500">
-            Use onboarding to create your first Slack integration and activate
-            triggers.
-          </p>
-          <button
-            className="mt-3 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-            disabled={!canManageIntegrations}
-            onClick={openOnboarding}
-            type="button"
-          >
-            Start Slack onboarding
-          </button>
-        </section>
-      )}
+      {!integrationsQuery.isPending && (
+        <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">
+                Slack integration
+              </h3>
+              <p className="text-sm text-slate-600">Workspace connection</p>
+            </div>
+            <span className="rounded-md border border-slate-300 px-2 py-1 text-xs uppercase tracking-wide text-slate-700">
+              {statusLabel}
+            </span>
+          </div>
 
-      {isOnboardingOpen && (
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="text-lg font-semibold text-slate-900">
-            Slack onboarding wizard
-          </h3>
-          <p className="mt-1 text-sm text-slate-600">
-            Step {onboardingStep} of 3
-          </p>
+          <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-slate-500">Channel</dt>
+              <dd className="font-medium text-slate-900">{channelName}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Last delivery</dt>
+              <dd className="font-medium text-slate-900">
+                {lastDeliveryLabel}
+              </dd>
+            </div>
+          </dl>
 
-          {onboardingStep === 1 && (
-            <div className="mt-4 space-y-3">
-              <p className="text-sm text-slate-700">How this works</p>
-              <p
-                aria-label="integration name help"
-                className="text-xs text-slate-500"
-                role="tooltip"
-              >
-                Use a clear name so operators can identify this connector fast.
-              </p>
-              <label
-                className="block text-sm font-medium text-slate-700"
-                htmlFor="onboarding-name"
-              >
-                Integration name
-              </label>
-              <input
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                id="onboarding-name"
-                onChange={(event) => {
-                  setOnboardingName(event.target.value);
+          {slackIntegrationId.trim().length === 0 && (
+            <div className="mt-4">
+              <button
+                className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                disabled={!canManageIntegrations || isConnectPending}
+                onClick={() => {
+                  void handleConnectSlackWorkspace();
                 }}
-                value={onboardingName}
-              />
-              <div className="flex gap-2">
-                <button
-                  className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                  disabled={!canAdvanceOnboarding}
-                  onClick={() => {
-                    setOnboardingStep(2);
-                  }}
-                  type="button"
-                >
-                  Next: Choose triggers
-                </button>
-                <button
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
-                  onClick={() => {
-                    setIsOnboardingOpen(false);
-                  }}
-                  type="button"
-                >
-                  Cancel
-                </button>
-              </div>
+                type="button"
+              >
+                {isConnectPending ? "Connecting..." : "Connect Slack Workspace"}
+              </button>
             </div>
           )}
 
-          {onboardingStep === 2 && (
+          {slackIntegrationId.trim().length > 0 && (
             <div className="mt-4 space-y-3">
-              <h4 className="text-sm font-semibold text-slate-900">
-                Trigger setup walkthrough
-              </h4>
-              <p
-                aria-label="trigger walkthrough help"
-                className="text-xs text-slate-500"
-                role="tooltip"
-              >
-                Choose one or more triggers to activate event delivery for this
-                integration.
-              </p>
-              <div className="space-y-2">
-                {ONBOARDING_TRIGGERS.map((eventType) => {
-                  const checked = selectedTriggers.includes(eventType);
-                  return (
-                    <label
-                      className="flex items-center gap-2 text-sm text-slate-700"
-                      htmlFor={`onboarding-trigger-${eventType}`}
-                      key={eventType}
-                    >
-                      <input
-                        checked={checked}
-                        id={`onboarding-trigger-${eventType}`}
-                        onChange={() => {
-                          setSelectedTriggers((current) => {
-                            if (current.includes(eventType)) {
-                              return current.filter(
-                                (item) => item !== eventType,
-                              );
-                            }
-                            return [...current, eventType];
-                          });
-                        }}
-                        type="checkbox"
-                      />
-                      {eventType}
-                    </label>
-                  );
-                })}
-              </div>
-              {createdIntegrationId && (
-                <div className="space-y-2">
+              {slackChannelsQuery.isPending && (
+                <p className="text-sm text-slate-600">
+                  Loading Slack channels...
+                </p>
+              )}
+              {slackChannelsQuery.isError && (
+                <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+                  Failed to load Slack channels.
+                </p>
+              )}
+              {!slackChannelsQuery.isPending && !slackChannelsQuery.isError && (
+                <>
                   <label
                     className="block text-sm font-medium text-slate-700"
-                    htmlFor="onboarding-slack-channel"
+                    htmlFor="slack-channel"
                   >
                     Slack channel
                   </label>
-                  {slackChannelsQuery.isPending && (
-                    <p className="text-sm text-slate-600">
-                      Loading Slack channels...
-                    </p>
-                  )}
-                  {slackChannelsQuery.isError && (
-                    <p className="text-sm text-rose-700">
-                      Failed to load Slack channels.
-                    </p>
-                  )}
-                  {!slackChannelsQuery.isPending &&
-                    !slackChannelsQuery.isError && (
-                      <select
-                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                        id="onboarding-slack-channel"
-                        onChange={(event) => {
-                          setSelectedSlackChannelId(event.target.value);
-                        }}
-                        value={selectedSlackChannelId}
-                      >
-                        <option value="">Select a channel</option>
-                        {(slackChannelsQuery.data ?? []).map((channel) => (
-                          <option key={channel.id} value={channel.id}>
-                            {channel.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                </div>
-              )}
-              <div className="flex gap-2">
-                <button
-                  className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white"
-                  disabled={
-                    !canManageIntegrations ||
-                    createIntegrationMutation.isPending ||
-                    slackConnectMutation.isPending
-                  }
-                  onClick={async () => {
-                    setFeedback(null);
-                    setTestDeliveryError(null);
-                    try {
-                      const created =
-                        await createIntegrationMutation.mutateAsync({
-                          name: onboardingName.trim(),
-                          connectorType: "slack",
-                          config: { channelId: "__pending__" },
-                          triggers: selectedTriggers.map((eventType) => ({
-                            eventType,
-                            isActive: true,
-                          })),
-                        });
-                      setCreatedIntegrationId(created.id);
-                      const installUrl = await slackConnectMutation.mutateAsync(
-                        {
-                          integrationId: created.id,
-                          resumeStep: "triggers",
-                        },
-                      );
-                      window.open(installUrl, "_self");
-                    } catch {
-                      setFeedback({
-                        type: "error",
-                        message:
-                          "Failed to start Slack OAuth. Retry onboarding.",
-                      });
-                    }
-                  }}
-                  type="button"
-                >
-                  Connect with Slack
-                </button>
-                <button
-                  className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white"
-                  disabled={
-                    !canManageIntegrations ||
-                    (Boolean(createdIntegrationId) && !hasSelectedSlackChannel)
-                  }
-                  onClick={async () => {
-                    setFeedback(null);
-                    setTestDeliveryError(null);
-                    if (createdIntegrationId) {
-                      await runTestDelivery(
-                        createdIntegrationId,
-                        selectedSlackChannelId.trim(),
-                      );
-                      return;
-                    }
-                    try {
-                      const created =
-                        await createIntegrationMutation.mutateAsync({
-                          name: onboardingName.trim(),
-                          connectorType: "slack",
-                          config: {
-                            channelId: hasSelectedSlackChannel
-                              ? selectedSlackChannelId.trim()
-                              : "__pending__",
-                          },
-                          triggers: selectedTriggers.map((eventType) => ({
-                            eventType,
-                            isActive: true,
-                          })),
-                        });
-                      setCreatedIntegrationId(created.id);
-                      await runTestDelivery(
-                        created.id,
-                        hasSelectedSlackChannel
-                          ? selectedSlackChannelId.trim()
-                          : undefined,
-                      );
-                    } catch {
-                      setFeedback({
-                        type: "error",
-                        message: "Failed to create integration. Try again.",
-                      });
-                    }
-                  }}
-                  type="button"
-                >
-                  Finish setup
-                </button>
-                <button
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
-                  onClick={() => {
-                    setOnboardingStep(1);
-                  }}
-                  type="button"
-                >
-                  Back
-                </button>
-              </div>
-              {testDeliveryError && createdIntegrationId && (
-                <section className="rounded-md border border-rose-200 bg-rose-50 p-3">
-                  <p className="text-sm text-rose-900">{testDeliveryError}</p>
-                  <button
-                    className="mt-2 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white"
-                    onClick={async () => {
-                      await runTestDelivery(
-                        createdIntegrationId,
-                        selectedSlackChannelId.trim(),
-                      );
+                  <select
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    id="slack-channel"
+                    onChange={(event) => {
+                      setSelectedSlackChannelId(event.target.value);
+                      setDidSendTestSucceed(false);
                     }}
-                    type="button"
+                    value={selectedSlackChannelId}
                   >
-                    Retry test delivery
-                  </button>
-                </section>
-              )}
-            </div>
-          )}
-
-          {onboardingStep === 3 && (
-            <div className="mt-4 space-y-3">
-              <h4 className="text-base font-semibold text-slate-900">
-                Slack onboarding complete
-              </h4>
-              <p className="text-sm text-slate-700">
-                Test delivery queued successfully.
-              </p>
-              {completionDeliveryId && (
-                <p className="text-xs text-slate-500">
-                  Delivery reference: {completionDeliveryId}
-                </p>
-              )}
-              <div className="flex gap-2">
-                <button
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
-                  onClick={() => {
-                    setIsOnboardingOpen(false);
-                  }}
-                  type="button"
-                >
-                  Close onboarding
-                </button>
-              </div>
-            </div>
-          )}
-        </section>
-      )}
-
-      {!isLoading && hasRecords && (
-        <ul className="grid gap-4 sm:grid-cols-1 xl:grid-cols-2">
-          {integrations.map((integration) => {
-            const healthLabel = healthLabels[integration.id] ?? "healthy";
-            return (
-              <li
-                key={integration.id}
-                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-semibold text-slate-900">
-                      {integration.name}
-                    </h3>
-                    <p className="text-sm text-slate-600">
-                      {formatConnector(integration.connectorType)}
-                    </p>
-                  </div>
-                  <p
-                    className="rounded-md border border-slate-300 px-2 py-1 text-xs uppercase tracking-wide text-slate-700"
-                    data-testid={`integration-health-${integration.id}`}
-                  >
-                    {healthLabel}
-                  </p>
-                </div>
-
-                {integration.lastError.trim().length > 0 && (
-                  <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                    {integration.lastError}
-                  </p>
-                )}
-
-                <section className="mt-4 space-y-2">
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Trigger management
-                  </h4>
-                  <ul className="space-y-2">
-                    {integration.triggers.length === 0 && (
-                      <li className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                        <p className="font-medium text-slate-900">
-                          Trigger setup walkthrough
-                        </p>
-                        <p className="mt-1">No triggers configured.</p>
-                        <p
-                          aria-label="trigger walkthrough help"
-                          className="mt-1 text-xs text-slate-500"
-                          role="tooltip"
-                        >
-                          Use onboarding for first trigger selection, then
-                          manage trigger activation in integration settings.
-                        </p>
-                      </li>
-                    )}
-                    {integration.triggers.map((trigger) => (
-                      <li
-                        key={trigger.id}
-                        className="rounded-md border border-slate-200 px-3 py-2 text-sm"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-slate-900">
-                            {trigger.eventType}
-                          </span>
-                          <span className="text-xs uppercase tracking-wide text-slate-600">
-                            {trigger.isActive ? "active" : "inactive"}
-                          </span>
-                        </div>
-                        {trigger.messageTemplate.trim().length > 0 && (
-                          <p className="mt-1 text-xs text-slate-600">
-                            {trigger.messageTemplate}
-                          </p>
-                        )}
-                      </li>
+                    <option value="">Select a channel</option>
+                    {(slackChannelsQuery.data ?? []).map((channel) => (
+                      <option key={channel.id} value={channel.id}>
+                        {channel.name}
+                      </option>
                     ))}
-                  </ul>
-                </section>
+                  </select>
 
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                    disabled={!canManageIntegrations}
-                    onClick={() => {
-                      setFeedback(null);
-                      updateIntegrationMutation.mutate({
-                        integrationId: integration.id,
-                        patch: { isActive: !integration.isActive },
-                      });
-                    }}
-                    type="button"
-                  >
-                    {integration.isActive
-                      ? `Disable ${integration.name}`
-                      : `Enable ${integration.name}`}
-                  </button>
-
-                  <button
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
-                    disabled={
-                      integration.connectorType !== "slack" ||
-                      !canManageIntegrations ||
-                      slackConnectMutation.isPending
-                    }
-                    onClick={async () => {
-                      setFeedback(null);
-                      setConnectingIntegrationId(integration.id);
-                      try {
-                        const installUrl =
-                          await slackConnectMutation.mutateAsync(
-                            integration.id,
-                          );
-                        window.open(installUrl, "_self");
-                      } catch {
-                        setFeedback({
-                          type: "error",
-                          message:
-                            "Failed to start Slack OAuth. Retry from integrations.",
-                        });
-                      } finally {
-                        setConnectingIntegrationId("");
-                      }
-                    }}
-                    type="button"
-                  >
-                    {connectingIntegrationId === integration.id
-                      ? "Connecting..."
-                      : `Connect Slack for ${integration.name}`}
-                  </button>
-
-                  <button
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-500"
-                    disabled
-                    type="button"
-                  >
-                    Test delivery unavailable
-                  </button>
-
-                  <button
-                    className="rounded-md border border-rose-300 px-3 py-2 text-sm font-medium text-rose-700 disabled:cursor-not-allowed disabled:text-rose-300"
-                    disabled={
-                      !canManageIntegrations ||
-                      deleteIntegrationMutation.isPending
-                    }
-                    onClick={() => {
-                      setFeedback(null);
-                      const shouldDelete = window.confirm(
-                        `Remove integration "${integration.name}"?`,
-                      );
-                      if (!shouldDelete) {
-                        return;
-                      }
-                      deleteIntegrationMutation.mutate(integration.id, {
-                        onSuccess: () => {
-                          setFeedback({
-                            type: "success",
-                            message: `${integration.name} removed.`,
-                          });
-                        },
-                        onError: () => {
-                          setFeedback({
-                            type: "error",
-                            message: `Failed to remove ${integration.name}.`,
-                          });
-                        },
-                      });
-                    }}
-                    type="button"
-                  >
-                    Remove {integration.name}
-                  </button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                  <div className="flex gap-2">
+                    <button
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
+                      disabled={!canManageIntegrations || isConnectPending}
+                      onClick={() => {
+                        void handleConnectSlackWorkspace();
+                      }}
+                      type="button"
+                    >
+                      Reconnect Slack Workspace
+                    </button>
+                    {slackIntegration && (
+                      <button
+                        className="rounded-md border border-rose-300 px-3 py-2 text-sm font-medium text-rose-700 disabled:cursor-not-allowed disabled:text-rose-300"
+                        disabled={
+                          !canManageIntegrations ||
+                          deleteIntegrationMutation.isPending
+                        }
+                        onClick={() => {
+                          if (!window.confirm("Remove integration?")) {
+                            return;
+                          }
+                          deleteIntegrationMutation.mutate(slackIntegration.id);
+                        }}
+                        type="button"
+                      >
+                        Remove integration
+                      </button>
+                    )}
+                    <button
+                      className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                      disabled={!canSendTest}
+                      onClick={() => {
+                        void handleSendTest();
+                      }}
+                      type="button"
+                    >
+                      {integrationTestDeliveryMutation.isPending
+                        ? "Sending test..."
+                        : "Send Test"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </article>
       )}
     </section>
   );

@@ -50,11 +50,24 @@ export interface IntegrationTestDeliveryResult {
   deliveryId: string | null;
 }
 
+export interface IntegrationDeliveryRecord {
+  id: string;
+  status: "pending" | "delivered" | "failed";
+  createdAt: string;
+}
+
 export type IntegrationHealthStatus =
   | "healthy"
   | "degraded"
   | "expired"
   | "disabled";
+
+export type SlackIntegrationStatus =
+  | "active"
+  | "degraded"
+  | "expired"
+  | "disabled"
+  | "failed";
 
 export function resolveIntegrationHealth(
   integration: Pick<
@@ -79,4 +92,36 @@ export function resolveIntegrationHealth(
     }
   }
   return "healthy";
+}
+
+export function resolveSlackIntegrationStatus(
+  integration: Pick<
+    IntegrationRecord,
+    "isActive" | "lastError" | "tokenExpiresAt"
+  >,
+  lastDelivery?: Pick<IntegrationDeliveryRecord, "status">,
+  now = new Date(),
+): SlackIntegrationStatus {
+  if (!integration.isActive) {
+    return "disabled";
+  }
+  if (integration.tokenExpiresAt) {
+    const expiresAt = new Date(integration.tokenExpiresAt);
+    if (
+      !Number.isNaN(expiresAt.getTime()) &&
+      expiresAt.getTime() <= now.getTime()
+    ) {
+      return "expired";
+    }
+  }
+  if (lastDelivery?.status === "failed") {
+    return "failed";
+  }
+  if (integration.lastError.trim().length > 0) {
+    return "degraded";
+  }
+  if (lastDelivery?.status === "delivered") {
+    return "active";
+  }
+  return "degraded";
 }
