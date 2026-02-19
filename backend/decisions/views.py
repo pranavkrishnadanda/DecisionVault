@@ -12,14 +12,21 @@ from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import (
-    NotAuthenticated,
     NotFound,
-    PermissionDenied,
     ValidationError,
 )
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from api.models import OrganizationRole
+from core.permissions import (
+    get_user_membership_or_raise,
+    require_decision_access_or_404,
+    require_read_role,
+    require_write_role,
+    resolve_org_decision_or_404,
+    scope_queryset_to_membership,
+)
 from decisions.models import Decision, DecisionStatus
 from decisions.realtime import decision_event_broker, event_stream_generator
 from decisions.renderers import ServerSentEventRenderer
@@ -59,15 +66,13 @@ class DecisionViewSet(viewsets.ViewSet):
             - Staff/superuser: can view all decisions
             - Regular user: can view only owned decisions
         """
-        user = request.user
-        if user.is_staff or user.is_superuser:
-            queryset = Decision.objects.all()
-        else:
-            user_id = str(user.id) if user.id is not None else ""
-            username = user.get_username()
-            queryset = Decision.objects.filter(
-                Q(created_by=user_id) | Q(created_by=username)
-            )
+        membership = get_user_membership_or_raise(request.user)
+        require_read_role(membership)
+        queryset = scope_queryset_to_membership(Decision.objects.all(), membership)
+        if membership.role != OrganizationRole.ADMIN:
+            user_id = str(request.user.id) if request.user.id is not None else ""
+            username = request.user.get_username()
+            queryset = queryset.filter(Q(created_by=user_id) | Q(created_by=username))
 
         status_param = request.query_params.get("status")
         if status_param:
@@ -178,30 +183,14 @@ class DecisionViewSet(viewsets.ViewSet):
         return response
 
     @staticmethod
-    def _resolve_decision(pk: str) -> Decision:
+    def _resolve_decision(pk: str, request) -> Decision:
         try:
             decision_id = uuid.UUID(pk)
         except (ValueError, AttributeError):
             raise NotFound(f"Invalid decision ID: {pk}")
 
-        try:
-            return Decision.objects.get(id=decision_id)
-        except Decision.DoesNotExist:
-            raise NotFound(f"Decision not found: {pk}")
-
-    @staticmethod
-    def _enforce_owner_or_staff(request, decision: Decision) -> None:
-        if not request.user or not request.user.is_authenticated:
-            raise NotAuthenticated("Authentication credentials were not provided.")
-
-        user_id = str(request.user.id) if request.user.id is not None else ""
-        username = request.user.get_username()
-        is_owner = decision.created_by in {user_id, username}
-
-        if not (is_owner or request.user.is_staff or request.user.is_superuser):
-            raise PermissionDenied(
-                "You do not have permission to access this decision."
-            )
+        membership = get_user_membership_or_raise(request.user)
+        return resolve_org_decision_or_404(membership, str(decision_id))
 
     def create(self, request):
         """
@@ -217,12 +206,17 @@ class DecisionViewSet(viewsets.ViewSet):
             201 Created with decision data
             400 Bad Request if validation fails
         """
+        membership = get_user_membership_or_raise(request.user)
+        require_write_role(membership)
         serializer = DecisionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         # Create decision
         user_id = str(request.user.id) if request.user and request.user.id else ""
-        decision = serializer.save(created_by=user_id)
+        decision = serializer.save(
+            created_by=user_id,
+            organization=membership.organization,
+        )
 
         # Create audit log
         AuditLogService.log_create(decision=decision, actor_type="api")
@@ -243,8 +237,10 @@ class DecisionViewSet(viewsets.ViewSet):
             200 OK with decision data
             404 Not Found if decision doesn't exist
         """
-        decision = self._resolve_decision(pk)
-        self._enforce_owner_or_staff(request, decision)
+        membership = get_user_membership_or_raise(request.user)
+        require_read_role(membership)
+        decision = self._resolve_decision(pk, request)
+        require_decision_access_or_404(membership, request.user, decision)
 
         serializer = DecisionSerializer(decision)
         return Response(serializer.data)
@@ -262,8 +258,10 @@ class DecisionViewSet(viewsets.ViewSet):
             400 Bad Request if decision cannot be submitted
             404 Not Found if decision doesn't exist
         """
-        decision = self._resolve_decision(pk)
-        self._enforce_owner_or_staff(request, decision)
+        membership = get_user_membership_or_raise(request.user)
+        require_write_role(membership)
+        decision = self._resolve_decision(pk, request)
+        require_decision_access_or_404(membership, request.user, decision)
 
         # Validate empty payload
         submit_serializer = DecisionSubmitSerializer(data=request.data)
@@ -296,8 +294,10 @@ class DecisionViewSet(viewsets.ViewSet):
             - Authenticated users only
             - Owner or staff users only
         """
-        decision = self._resolve_decision(pk)
-        self._enforce_owner_or_staff(request, decision)
+        membership = get_user_membership_or_raise(request.user)
+        require_write_role(membership)
+        decision = self._resolve_decision(pk, request)
+        require_decision_access_or_404(membership, request.user, decision)
 
         try:
             DecisionWorkflowService.retry_decision(decision)

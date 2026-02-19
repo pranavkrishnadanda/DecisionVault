@@ -15,6 +15,7 @@ DecisionVault MVP v1 delivers a **minimal verifiable decision workflow** with:
 - Basic audit logging (append-only, non-cryptographic)
 - Schema verification
 - Single RabbitMQ queue
+- Multi-tenant organizations with RBAC isolation
 
 This document defines the scoped architecture for MVP v1.
 
@@ -35,7 +36,6 @@ This document defines the scoped architecture for MVP v1.
 - Advanced verification types (signature, checksum, rule)
 - Priority queue orchestration
 - Distributed worker supervisor
-- Multi-tenant isolation
 - Complex workflow orchestration (multi-step)
 
 ---
@@ -200,7 +200,33 @@ class AuditLog(models.Model):
 
 Authentication requirements:
 - Decision endpoints require `Authorization: Bearer <JWT>`
-- Access is owner-scoped unless caller is staff/superuser
+- Access is organization-scoped with role-based checks and owner checks for non-admin users
+
+### 3.5 Organization and RBAC Matrix
+
+All persisted workflow entities are organization-scoped:
+- `Decision`
+- `Workflow`
+- `WorkflowStep`
+- `AuditLog`
+- `SavedView`
+- `TablePreference`
+
+Tenant model:
+- `Organization`: top-level tenant boundary
+- `OrganizationMembership`: `(user, organization, role)`
+- Roles: `admin`, `operator`, `viewer`
+
+RBAC matrix:
+- `admin`: list/read/create/submit/retry inside own organization
+- `operator`: list/read own decisions, create, submit/retry own decisions
+- `viewer`: read-only access to own decisions
+
+Isolation guarantees:
+- All API querysets are filtered by caller organization before object lookup.
+- Cross-organization resource access returns `404 Not Found` (never `403`) to prevent existence leaks.
+- Permission checks are centralized in `core/permissions.py`.
+- Legacy data is preserved through default organization backfill and user membership backfill migrations.
 
 ### 3.2 Authentication Endpoints
 

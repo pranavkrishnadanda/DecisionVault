@@ -153,7 +153,7 @@ class TestDecisionAuthorizationWithJWT:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_submit_decision_as_non_owner_forbidden(self, user, other_user):
+    def test_submit_decision_as_non_owner_not_found(self, user, other_user):
         decision = Decision.objects.create(
             title="Owner guarded",
             description="Submit should be owner-only",
@@ -166,4 +166,4 @@ class TestDecisionAuthorizationWithJWT:
             f"/api/v1/decisions/{decision.id}/submit/", {}, format="json"
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
