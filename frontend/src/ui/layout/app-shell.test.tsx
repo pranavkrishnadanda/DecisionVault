@@ -1,8 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "@/state/auth-store";
 import { AuthGate } from "@/ui/features/auth/auth-gate";
 import { AppShell } from "@/ui/layout/app-shell";
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => window.location.pathname,
+}));
 
 describe("app shell", () => {
   beforeEach(() => {

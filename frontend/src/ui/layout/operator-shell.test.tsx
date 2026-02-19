@@ -1,6 +1,10 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { OperatorShell } from "@/ui/layout/operator-shell";
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => window.location.pathname,
+}));
 
 describe("operator shell sidebar active state", () => {
   it("highlights decisions on decisions routes", () => {

@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { logoutSessionRequest } from "@/api/session";
 import { useAccessControl } from "@/hooks/use-access-control";
@@ -14,16 +15,9 @@ const SHELL_ITEMS: SidebarItem[] = [
   { href: "/settings", label: "Settings", key: "settings" },
 ];
 
-function readPathname() {
-  if (typeof window === "undefined") {
-    return "/decisions";
-  }
-  return window.location.pathname;
-}
-
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
-  const pathname = readPathname();
+  const pathname = usePathname();
   const { isAccessHydrating, organizationId, role } = useAccessControl();
   const clearSessionToken = useAuthStore((state) => state.clearSessionToken);
 
@@ -45,7 +39,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           collapsed={collapsed}
           items={sidebarItems}
           onToggleCollapsed={onToggleCollapsed}
-          pathname={pathname}
+          pathname={pathname ?? "/decisions"}
         />
         <main className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-lg backdrop-blur">
           <Topbar
