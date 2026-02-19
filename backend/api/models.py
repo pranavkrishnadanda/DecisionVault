@@ -68,6 +68,39 @@ class OrganizationMembership(models.Model):
         return f"{self.user_id}:{self.organization_id}:{self.role}"
 
 
+class RefreshToken(models.Model):
+    """Persistent refresh-token session record."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="refresh_tokens",
+    )
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="refresh_tokens",
+    )
+    hashed_token = models.CharField(max_length=128)
+    expires_at = models.DateTimeField()
+    revoked = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "refresh_tokens"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "organization"]),
+            models.Index(fields=["organization", "revoked"]),
+            models.Index(fields=["expires_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id}:{self.organization_id}:{self.revoked}"
+
+
 WEBHOOK_EVENT_DECISION_CREATED = "decision.created"
 WEBHOOK_EVENT_DECISION_UPDATED = "decision.updated"
 WEBHOOK_EVENT_DECISION_SUBMITTED = "decision.submitted"

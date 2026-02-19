@@ -6,11 +6,12 @@ Provides REST API endpoints for DecisionVault.
 
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import TokenRefreshView
 
 from api.views import (
     IntegrationViewSet,
-    OrganizationTokenObtainPairView,
+    LoginView,
+    LogoutView,
+    RefreshSessionView,
     RegisterView,
     SavedViewViewSet,
     TablePreferenceDetailView,
@@ -47,10 +48,9 @@ urlpatterns = [
     ),
     path("health/", health, name="health"),
     path("auth/register/", RegisterView.as_view(), name="register"),
-    path(
-        "auth/token/",
-        OrganizationTokenObtainPairView.as_view(),
-        name="token_obtain_pair",
-    ),
-    path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("auth/token/", LoginView.as_view(), name="token_obtain_pair"),
+    path("auth/refresh/", RefreshSessionView.as_view(), name="refresh_session"),
+    path("auth/logout/", LogoutView.as_view(), name="logout"),
+    # Backward-compatible alias path.
+    path("auth/token/refresh/", RefreshSessionView.as_view(), name="token_refresh"),
 ]

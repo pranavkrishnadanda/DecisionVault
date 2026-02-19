@@ -33,7 +33,7 @@ def api_client():
 
 @pytest.mark.django_db
 class TestJWTTokenEndpoints:
-    def test_obtain_token_returns_access_and_refresh(self, api_client, user):
+    def test_obtain_token_returns_access_and_cookie_refresh(self, api_client, user):
         response = api_client.post(
             "/api/v1/auth/token/",
             {"username": user.username, "password": "pass1234"},
@@ -43,7 +43,8 @@ class TestJWTTokenEndpoints:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert "access" in data
-        assert "refresh" in data
+        assert "refresh" not in data
+        assert "dv_refresh" in response.cookies
 
     def test_obtain_token_includes_org_access_claims(self, api_client, user):
         response = api_client.post(
@@ -67,21 +68,22 @@ class TestJWTTokenEndpoints:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_refresh_token_returns_new_access(self, api_client, user):
-        token_response = api_client.post(
+        login_response = api_client.post(
             "/api/v1/auth/token/",
             {"username": user.username, "password": "pass1234"},
             format="json",
         )
-        refresh_token = token_response.json()["refresh"]
 
         response = api_client.post(
             "/api/v1/auth/token/refresh/",
-            {"refresh": refresh_token},
+            {},
             format="json",
         )
 
         assert response.status_code == status.HTTP_200_OK
         assert "access" in response.json()
+        assert "refresh" not in response.json()
+        assert "dv_refresh" in login_response.cookies
 
 
 @pytest.mark.django_db
@@ -100,8 +102,9 @@ class TestJWTRegistrationEndpoint:
         assert response.status_code == status.HTTP_201_CREATED
         payload = response.json()
         assert "access" in payload
-        assert "refresh" in payload
+        assert "refresh" not in payload
         assert payload["user"]["username"] == "new-operator"
+        assert "dv_refresh" in response.cookies
 
     def test_register_returns_access_with_org_claims(self, api_client):
         response = api_client.post(

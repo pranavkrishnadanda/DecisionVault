@@ -232,8 +232,18 @@ Isolation guarantees:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/auth/token/` | Obtain JWT access/refresh token pair |
-| POST | `/api/v1/auth/token/refresh/` | Refresh JWT access token |
+| POST | `/api/v1/auth/token/` | Login and issue short-lived access token + HttpOnly refresh cookie |
+| POST | `/api/v1/auth/register/` | Register user and issue short-lived access token + HttpOnly refresh cookie |
+| POST | `/api/v1/auth/refresh/` | Rotate refresh cookie and issue new access token |
+| POST | `/api/v1/auth/logout/` | Revoke refresh token and clear cookie |
+| POST | `/api/v1/auth/token/refresh/` | Backward-compatible alias for `/auth/refresh/` |
+
+Authentication token strategy:
+- Access token: JWT, short-lived, client memory only.
+- Refresh token: persistent, hashed server-side (`refresh_tokens` table), HttpOnly cookie (`dv_refresh`), rotated on every refresh.
+- Browser persistence: page reload survives through silent refresh on app boot; no `localStorage` token storage.
+- Security controls: revoked/expired/mismatched refresh tokens are rejected with `401` and cookie is cleared.
+- Tenant safety: refresh token is organization-bound; membership mismatch invalidates refresh.
 
 ### 3.3 Health Endpoints
 

@@ -16,11 +16,11 @@ export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const token = useAuthStore.getState().sessionToken;
+  const isAuthEndpoint = path.startsWith("/api/v1/auth/");
 
-  const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL ?? ""}${path}`,
-    {
+  const performRequest = async () => {
+    const token = useAuthStore.getState().sessionToken;
+    return fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
@@ -28,8 +28,19 @@ export async function apiFetch<T>(
         ...init?.headers,
       },
       credentials: "include",
-    },
-  );
+    });
+  };
+
+  let response = await performRequest();
+
+  if (response.status === 401 && !isAuthEndpoint) {
+    const refreshedToken = await useAuthStore.getState().refreshSession();
+    if (refreshedToken) {
+      response = await performRequest();
+    } else {
+      useAuthStore.getState().clearSessionToken();
+    }
+  }
 
   const requestId = response.headers.get("X-Request-ID");
 

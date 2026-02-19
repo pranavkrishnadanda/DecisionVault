@@ -2,7 +2,6 @@ import { apiFetch } from "@/api/client";
 
 interface TokenResponse {
   access: string;
-  refresh: string;
 }
 
 interface LoginInput {

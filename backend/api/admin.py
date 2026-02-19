@@ -8,6 +8,7 @@ from api.models import (
     IntegrationTrigger,
     Organization,
     OrganizationMembership,
+    RefreshToken,
     WebhookDelivery,
     WebhookDeliveryAttempt,
     WebhookSubscription,
@@ -139,3 +140,18 @@ class IntegrationDeliveryAttemptAdmin(admin.ModelAdmin):
     list_filter = ("organization", "status")
     search_fields = ("id", "delivery__id", "error_message")
     autocomplete_fields = ("organization", "delivery")
+
+
+@admin.register(RefreshToken)
+class RefreshTokenAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "organization",
+        "expires_at",
+        "revoked",
+        "created_at",
+    )
+    list_filter = ("organization", "revoked")
+    search_fields = ("id", "user__username", "user__email")
+    autocomplete_fields = ("user", "organization")

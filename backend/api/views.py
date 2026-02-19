@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.contrib.auth import authenticate
 from django.core import signing
 from django.http import JsonResponse
 from django.utils import timezone
@@ -11,8 +12,6 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet, ModelViewSet
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView
 
 from api.models import (
     INTEGRATION_EVENT_TYPES,
@@ -23,14 +22,19 @@ from api.models import (
 )
 from api.serializers import (
     IntegrationSerializer,
-    OrganizationTokenObtainPairSerializer,
     RegisterSerializer,
     SavedViewSerializer,
     TablePreferenceSerializer,
     WebhookDeliveryDetailSerializer,
     WebhookDeliveryListSerializer,
     WebhookSubscriptionSerializer,
-    inject_access_context_claims,
+)
+from api.services.auth_tokens import (
+    REFRESH_COOKIE_NAME,
+    issue_session_tokens,
+    refresh_cookie_options,
+    revoke_refresh_token,
+    rotate_refresh_token,
 )
 from api.services.credentials_vault import encrypt_credentials
 from api.services.integration_oauth import (
@@ -84,13 +88,11 @@ class RegisterView(APIView):
         serializer.is_valid(raise_exception=True)
 
         user = serializer.save()
-        refresh = RefreshToken.for_user(user)
-        inject_access_context_claims(refresh, user)
+        access_token, refresh_token = issue_session_tokens(user=user)
 
-        return Response(
+        response = Response(
             {
-                "access": str(refresh.access_token),
-                "refresh": str(refresh),
+                "access": access_token,
                 "user": {
                     "id": user.id,
                     "username": user.username,
@@ -99,6 +101,70 @@ class RegisterView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+        response.set_cookie(
+            REFRESH_COOKIE_NAME,
+            refresh_token,
+            **refresh_cookie_options(),
+        )
+        return response
+
+
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        username = request.data.get("username", "")
+        password = request.data.get("password", "")
+        user = authenticate(request, username=username, password=password)
+        if user is None:
+            return Response(
+                {"detail": "No active account found with the given credentials"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        access_token, refresh_token = issue_session_tokens(user=user)
+        response = Response({"access": access_token}, status=status.HTTP_200_OK)
+        response.set_cookie(
+            REFRESH_COOKIE_NAME,
+            refresh_token,
+            **refresh_cookie_options(),
+        )
+        return response
+
+
+class RefreshSessionView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        refresh_cookie = request.COOKIES.get(REFRESH_COOKIE_NAME, "")
+        rotated = rotate_refresh_token(raw_token=refresh_cookie)
+        if rotated is None:
+            response = Response(
+                {"detail": "Session refresh failed."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+            response.delete_cookie(REFRESH_COOKIE_NAME, path="/", samesite="Lax")
+            return response
+
+        access_token, refresh_token = rotated
+        response = Response({"access": access_token}, status=status.HTTP_200_OK)
+        response.set_cookie(
+            REFRESH_COOKIE_NAME,
+            refresh_token,
+            **refresh_cookie_options(),
+        )
+        return response
+
+
+class LogoutView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        refresh_cookie = request.COOKIES.get(REFRESH_COOKIE_NAME, "")
+        revoke_refresh_token(raw_token=refresh_cookie)
+        response = Response(status=status.HTTP_204_NO_CONTENT)
+        response.delete_cookie(REFRESH_COOKIE_NAME, path="/", samesite="Lax")
+        return response
 
 
 class SavedViewViewSet(ModelViewSet):
@@ -116,10 +182,6 @@ class SavedViewViewSet(ModelViewSet):
     def perform_create(self, serializer):
         membership = get_user_membership_or_raise(self.request.user)
         serializer.save(user=self.request.user, organization=membership.organization)
-
-
-class OrganizationTokenObtainPairView(TokenObtainPairView):
-    serializer_class = OrganizationTokenObtainPairSerializer
 
 
 class WebhookSubscriptionViewSet(ModelViewSet):

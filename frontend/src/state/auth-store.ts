@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { refreshSessionRequest } from "@/api/session";
 import type {
   AccessContext,
   OrganizationRole,
@@ -10,6 +11,7 @@ interface AuthStore {
   accessContext: AccessContext | null;
   isAccessHydrating: boolean;
   setSessionToken: (sessionToken: SessionToken) => void;
+  refreshSession: () => Promise<SessionToken | null>;
   setAccessHydrating: (isAccessHydrating: boolean) => void;
   clearSessionToken: () => void;
 }
@@ -74,13 +76,41 @@ function resolveAccessContext(token: string): AccessContext {
 export const useAuthStore = create<AuthStore>((set) => ({
   sessionToken: null,
   accessContext: null,
-  isAccessHydrating: false,
+  isAccessHydrating: true,
   setSessionToken: (sessionToken) => {
     set({
       sessionToken,
       accessContext: resolveAccessContext(sessionToken),
       isAccessHydrating: false,
     });
+  },
+  refreshSession: async () => {
+    set({ isAccessHydrating: true });
+    try {
+      const nextToken = await refreshSessionRequest();
+      if (!nextToken) {
+        set({
+          sessionToken: null,
+          accessContext: null,
+          isAccessHydrating: false,
+        });
+        return null;
+      }
+
+      set({
+        sessionToken: nextToken,
+        accessContext: resolveAccessContext(nextToken),
+        isAccessHydrating: false,
+      });
+      return nextToken;
+    } catch {
+      set({
+        sessionToken: null,
+        accessContext: null,
+        isAccessHydrating: false,
+      });
+      return null;
+    }
   },
   setAccessHydrating: (isAccessHydrating) => {
     set({ isAccessHydrating });

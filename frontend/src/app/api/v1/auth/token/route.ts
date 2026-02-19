@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
   const contentType =
     upstream.headers.get("content-type") ?? "application/json";
   const requestId = upstream.headers.get("X-Request-ID");
+  const setCookie = upstream.headers.get("set-cookie");
   const responseBody = await upstream.text();
 
   return new NextResponse(responseBody, {
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
     headers: {
       "Content-Type": contentType,
       ...(requestId ? { "X-Request-ID": requestId } : {}),
+      ...(setCookie ? { "Set-Cookie": setCookie } : {}),
     },
   });
 }
