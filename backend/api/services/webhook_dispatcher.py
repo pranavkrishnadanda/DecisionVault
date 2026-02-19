@@ -10,7 +10,7 @@ import pika
 from django.db import transaction
 
 from api.models import Organization, WebhookDelivery, WebhookSubscription
-from core.constants import WEBHOOK_DELIVERY_QUEUE
+from core.constants import WEBHOOK_DELIVERY_QUEUE, WEBHOOK_DLQ_QUEUE
 from core.rabbitmq import RabbitMQClient
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 class WebhookQueueClient(RabbitMQClient):
     QUEUE_NAME = WEBHOOK_DELIVERY_QUEUE
+
+
+class WebhookDeadLetterQueueClient(RabbitMQClient):
+    QUEUE_NAME = WEBHOOK_DLQ_QUEUE
 
 
 def enqueue_webhook_delivery(delivery_id: str) -> bool:
@@ -34,6 +38,27 @@ def enqueue_webhook_delivery(delivery_id: str) -> bool:
     except pika.exceptions.AMQPError:
         logger.exception(
             "Webhook delivery enqueue failed", extra={"delivery_id": delivery_id}
+        )
+        return False
+
+
+def enqueue_webhook_dead_letter(delivery_id: str, reason: str) -> bool:
+    message = {
+        "type": "webhook.delivery.dead_letter",
+        "payload": {
+            "delivery_id": delivery_id,
+            "reason": reason,
+        },
+    }
+    try:
+        client = WebhookDeadLetterQueueClient()
+        client.publish(message)
+        client.close()
+        return True
+    except pika.exceptions.AMQPError:
+        logger.exception(
+            "Webhook DLQ enqueue failed",
+            extra={"delivery_id": delivery_id},
         )
         return False
 

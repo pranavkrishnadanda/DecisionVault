@@ -8,16 +8,22 @@ from django.db import transaction
 from django.utils import timezone
 
 from api.models import WebhookDelivery, WebhookDeliveryAttempt
+from api.services.webhook_dispatcher import enqueue_webhook_dead_letter
 from api.services.webhook_signing import build_signature_headers
 
 logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT_SECONDS = 10
 BASE_RETRY_DELAY_SECONDS = 30
+RATE_LIMIT_WINDOW_SECONDS = 60
+SUBSCRIPTION_RATE_LIMIT_PER_WINDOW = 60
+CIRCUIT_BREAKER_WINDOW_SECONDS = 300
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5
 
 
 def _next_retry_at(attempt_number: int):
-    return timezone.now() + timedelta(seconds=BASE_RETRY_DELAY_SECONDS * attempt_number)
+    backoff_seconds = BASE_RETRY_DELAY_SECONDS * (2 ** (attempt_number - 1))
+    return timezone.now() + timedelta(seconds=backoff_seconds)
 
 
 def _record_attempt(
@@ -39,6 +45,55 @@ def _record_attempt(
     )
 
 
+def _is_rate_limited(delivery: WebhookDelivery) -> bool:
+    window_floor = timezone.now() - timedelta(seconds=RATE_LIMIT_WINDOW_SECONDS)
+    attempts = WebhookDeliveryAttempt.objects.filter(
+        organization=delivery.organization,
+        delivery__subscription=delivery.subscription,
+        created_at__gte=window_floor,
+    ).count()
+    return attempts >= SUBSCRIPTION_RATE_LIMIT_PER_WINDOW
+
+
+def _apply_circuit_breaker_on_failure(delivery: WebhookDelivery) -> None:
+    window_floor = timezone.now() - timedelta(seconds=CIRCUIT_BREAKER_WINDOW_SECONDS)
+    recent_failures = WebhookDeliveryAttempt.objects.filter(
+        organization=delivery.organization,
+        delivery__subscription=delivery.subscription,
+        status=WebhookDeliveryAttempt.Status.FAILED,
+        created_at__gte=window_floor,
+    ).count()
+    if recent_failures >= CIRCUIT_BREAKER_FAILURE_THRESHOLD:
+        delivery.subscription.is_active = False
+        delivery.subscription.save(update_fields=["is_active", "updated_at"])
+        logger.error(
+            "Webhook subscription auto-disabled by circuit breaker",
+            extra={
+                "subscription_id": str(delivery.subscription_id),
+                "organization_id": str(delivery.organization_id),
+                "recent_failures": recent_failures,
+            },
+        )
+
+
+def _finalize_terminal_failure(delivery: WebhookDelivery, reason: str) -> None:
+    delivery.status = WebhookDelivery.Status.FAILED
+    delivery.next_retry_at = None
+    delivery.last_error = reason
+    delivery.save(
+        update_fields=[
+            "attempt_count",
+            "last_attempt_at",
+            "last_response_status",
+            "status",
+            "next_retry_at",
+            "last_error",
+            "updated_at",
+        ]
+    )
+    enqueue_webhook_dead_letter(str(delivery.id), reason=reason)
+
+
 def process_webhook_delivery(delivery_id: str) -> bool:
     with transaction.atomic():
         delivery = (
@@ -48,6 +103,15 @@ def process_webhook_delivery(delivery_id: str) -> bool:
             .first()
         )
         if delivery is None or delivery.status != WebhookDelivery.Status.PENDING:
+            return False
+        if not delivery.subscription.is_active:
+            _finalize_terminal_failure(delivery, reason="subscription_inactive")
+            return False
+        if delivery.next_retry_at and delivery.next_retry_at > timezone.now():
+            return False
+        if _is_rate_limited(delivery):
+            delivery.next_retry_at = timezone.now() + timedelta(seconds=5)
+            delivery.save(update_fields=["next_retry_at", "updated_at"])
             return False
 
         attempt_number = delivery.attempt_count + 1
@@ -61,7 +125,9 @@ def process_webhook_delivery(delivery_id: str) -> bool:
         }
         headers = {
             "Content-Type": "application/json",
-            **build_signature_headers(payload=payload, secret=delivery.subscription.signing_secret),
+            **build_signature_headers(
+                payload=payload, secret=delivery.subscription.signing_secret
+            ),
         }
 
         try:
@@ -82,22 +148,22 @@ def process_webhook_delivery(delivery_id: str) -> bool:
             delivery.last_error = error_message
             delivery.last_response_status = None
             if attempt_number >= delivery.max_attempts:
-                delivery.status = WebhookDelivery.Status.FAILED
-                delivery.next_retry_at = None
+                _finalize_terminal_failure(delivery, reason=error_message)
             else:
                 delivery.status = WebhookDelivery.Status.PENDING
                 delivery.next_retry_at = _next_retry_at(attempt_number)
-            delivery.save(
-                update_fields=[
-                    "attempt_count",
-                    "last_attempt_at",
-                    "status",
-                    "next_retry_at",
-                    "last_error",
-                    "last_response_status",
-                    "updated_at",
-                ]
-            )
+                delivery.save(
+                    update_fields=[
+                        "attempt_count",
+                        "last_attempt_at",
+                        "status",
+                        "next_retry_at",
+                        "last_error",
+                        "last_response_status",
+                        "updated_at",
+                    ]
+                )
+            _apply_circuit_breaker_on_failure(delivery)
             logger.warning(
                 "Webhook delivery timeout",
                 extra={
@@ -133,6 +199,9 @@ def process_webhook_delivery(delivery_id: str) -> bool:
                     "updated_at",
                 ]
             )
+            if delivery.subscription.is_active:
+                # Success closes breaker failure streak by definition.
+                pass
             return True
 
         error_message = f"http_{response.status_code}"
@@ -145,26 +214,27 @@ def process_webhook_delivery(delivery_id: str) -> bool:
             error_message=error_message,
         )
 
-        should_retry = response.status_code >= 500 and attempt_number < delivery.max_attempts
+        should_retry = (
+            response.status_code >= 500 and attempt_number < delivery.max_attempts
+        )
         if should_retry:
             delivery.status = WebhookDelivery.Status.PENDING
             delivery.next_retry_at = _next_retry_at(attempt_number)
+            delivery.last_error = error_message
+            delivery.save(
+                update_fields=[
+                    "attempt_count",
+                    "last_attempt_at",
+                    "status",
+                    "next_retry_at",
+                    "last_error",
+                    "last_response_status",
+                    "updated_at",
+                ]
+            )
         else:
-            delivery.status = WebhookDelivery.Status.FAILED
-            delivery.next_retry_at = None
-
-        delivery.last_error = error_message
-        delivery.save(
-            update_fields=[
-                "attempt_count",
-                "last_attempt_at",
-                "status",
-                "next_retry_at",
-                "last_error",
-                "last_response_status",
-                "updated_at",
-            ]
-        )
+            _finalize_terminal_failure(delivery, reason=error_message)
+        _apply_circuit_breaker_on_failure(delivery)
 
         logger.warning(
             "Webhook delivery request failed",
