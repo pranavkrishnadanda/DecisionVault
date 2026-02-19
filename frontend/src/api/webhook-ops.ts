@@ -77,6 +77,14 @@ export async function listWebhookDeliveries(
 export async function getWebhookTimeline(
   deliveryId: string,
 ): Promise<WebhookTimeline> {
+  if (!deliveryId || deliveryId === "null" || deliveryId === "undefined") {
+    return {
+      deliveryId: "",
+      status: "idle",
+      events: [],
+    };
+  }
+
   const data = await apiFetch<TimelineApiResponse>(
     `/api/v1/webhook-deliveries/${deliveryId}/timeline/`,
   );
