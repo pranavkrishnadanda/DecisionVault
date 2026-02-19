@@ -18,13 +18,21 @@ vi.mock("@/hooks/use-decision-retry-mutation", () => ({
 
 describe("decision detail page", () => {
   beforeEach(() => {
-    useAuthStore.setState({ sessionToken: "jwt-token" });
+    useAuthStore.setState({
+      sessionToken: "jwt-token",
+      accessContext: { role: "operator", organizationId: "org-1" },
+      isAccessHydrating: false,
+    });
     mockUseDecisionDetailQuery.mockReset();
     mockUseDecisionRetryMutation.mockReset();
   });
 
   it("blocks access when token is missing", () => {
-    useAuthStore.setState({ sessionToken: null });
+    useAuthStore.setState({
+      sessionToken: null,
+      accessContext: null,
+      isAccessHydrating: false,
+    });
     mockUseDecisionDetailQuery.mockReturnValue({
       data: undefined,
       isPending: false,
@@ -199,5 +207,44 @@ describe("decision detail page", () => {
     expect(
       screen.getByText(/only failed decisions can be retried/i),
     ).toBeInTheDocument();
+  });
+
+  it("hides retry action for viewer role even on failed decisions", () => {
+    useAuthStore.setState({
+      sessionToken: "jwt-token",
+      accessContext: { role: "viewer", organizationId: "org-1" },
+      isAccessHydrating: false,
+    });
+    mockUseDecisionDetailQuery.mockReturnValue({
+      data: {
+        id: "dec-1",
+        title: "Loan Risk Review",
+        description: "Manual escalation for high-risk applicant",
+        status: "failed",
+        priority: 7,
+        metadata: {},
+        createdBy: "operator",
+        createdAt: "2026-02-18T10:00:00.000Z",
+        updatedAt: "2026-02-18T10:20:00.000Z",
+        workflowStartedAt: "2026-02-18T10:05:00.000Z",
+        workflowCompletedAt: "2026-02-18T10:19:00.000Z",
+        agentError: "score provider timeout",
+        agentResult: { stage: "scoring", retries: 3 },
+      },
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUseDecisionRetryMutation.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    });
+
+    render(<DecisionDetailPageClient decisionId="dec-1" />);
+
+    expect(
+      screen.queryByRole("button", { name: /retry decision/i }),
+    ).not.toBeInTheDocument();
   });
 });

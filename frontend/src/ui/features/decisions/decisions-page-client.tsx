@@ -12,6 +12,7 @@ import {
   type TableDensity,
   type TablePreferenceRecord,
 } from "@/domain/table-preference";
+import { useAccessControl } from "@/hooks/use-access-control";
 import { useCreateSavedViewMutation } from "@/hooks/use-create-saved-view-mutation";
 import { useDecisionEvents } from "@/hooks/use-decision-events";
 import { useDecisionsQuery } from "@/hooks/use-decisions-query";
@@ -125,7 +126,11 @@ function useDebouncedValue(value: string, delayMs: number) {
 
 export function DecisionsPageClient() {
   const sessionToken = useAuthStore(selectSessionToken);
-  const isAuthenticated = Boolean(sessionToken);
+  const { isAccessHydrating, permissions } = useAccessControl();
+  const isAuthenticated = Boolean(sessionToken) && !isAccessHydrating;
+  const canReadDecisions = permissions.canReadDecisions;
+  const canManageSavedViews = permissions.canManageSavedViews;
+  const canManageTablePreferences = permissions.canManageTablePreferences;
   const [filters, setFilters] = useState<DecisionsFilterState>(
     readInitialFiltersFromUrl,
   );
@@ -137,7 +142,7 @@ export function DecisionsPageClient() {
   const [tablePreference, setTablePreference] =
     useState<TablePreferenceRecord | null>(null);
 
-  useDecisionEvents(isAuthenticated);
+  useDecisionEvents(isAuthenticated && canReadDecisions);
 
   const queryFilters = useMemo<DecisionListFilters>(() => {
     return {
@@ -151,10 +156,12 @@ export function DecisionsPageClient() {
   }, [debouncedQuery, filters.from, filters.status, filters.to]);
 
   const { data, error, isError, isPending, refetch } = useDecisionsQuery(
-    isAuthenticated,
+    isAuthenticated && canReadDecisions,
     queryFilters,
   );
-  const { data: savedViews = [] } = useSavedViewsQuery(isAuthenticated);
+  const { data: savedViews = [] } = useSavedViewsQuery(
+    isAuthenticated && canManageSavedViews,
+  );
   const { mutate: createSavedView, isPending: isSavingView } =
     useCreateSavedViewMutation();
   const { mutate: deleteSavedView, isPending: isDeletingView } =
@@ -233,6 +240,9 @@ export function DecisionsPageClient() {
   );
 
   const onSaveCurrentFilters = useCallback(() => {
+    if (!canManageSavedViews) {
+      return;
+    }
     const hasFilters =
       Boolean(filters.q.trim()) ||
       Boolean(filters.status) ||
@@ -252,9 +262,19 @@ export function DecisionsPageClient() {
         to: filters.to || undefined,
       },
     });
-  }, [createSavedView, filters.from, filters.q, filters.status, filters.to]);
+  }, [
+    canManageSavedViews,
+    createSavedView,
+    filters.from,
+    filters.q,
+    filters.status,
+    filters.to,
+  ]);
 
   const onDeleteSavedView = useCallback(() => {
+    if (!canManageSavedViews) {
+      return;
+    }
     if (!activeSavedViewId) {
       return;
     }
@@ -266,7 +286,7 @@ export function DecisionsPageClient() {
       from: "",
       to: "",
     });
-  }, [activeSavedViewId, deleteSavedView]);
+  }, [activeSavedViewId, canManageSavedViews, deleteSavedView]);
 
   const onToggleColumn = useCallback((column: DecisionTableColumnKey) => {
     setTablePreference((currentState) => {
@@ -318,6 +338,9 @@ export function DecisionsPageClient() {
   }, []);
 
   const onSaveTableSettings = useCallback(() => {
+    if (!canManageTablePreferences) {
+      return;
+    }
     const current = tablePreference ?? defaultTablePreference();
     updateTablePreference({
       table: DECISIONS_TABLE_KEY,
@@ -327,7 +350,7 @@ export function DecisionsPageClient() {
         density: current.density,
       },
     });
-  }, [tablePreference, updateTablePreference]);
+  }, [canManageTablePreferences, tablePreference, updateTablePreference]);
 
   const tableColumns = useMemo(
     () =>
@@ -428,6 +451,8 @@ export function DecisionsPageClient() {
 
         <DecisionToolbar
           activeSavedViewId={activeSavedViewId}
+          canManageSavedViews={canManageSavedViews}
+          canManageTablePreferences={canManageTablePreferences}
           canDeleteSavedView={Boolean(activeSavedViewId)}
           density={effectiveTablePreference.density}
           fromDate={filters.from}
@@ -458,31 +483,40 @@ export function DecisionsPageClient() {
           toDate={filters.to}
         />
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-md">
-          {isPending || isTablePreferenceHydrating ? (
-            <TableSkeleton rows={8} />
-          ) : null}
+        {!canReadDecisions ? (
+          <section className="rounded-xl border border-amber-300/50 bg-amber-50 p-4 text-sm text-slate-700">
+            Your role does not allow viewing decision records in this
+            organization.
+          </section>
+        ) : null}
 
-          {isError ? (
-            <RetryPanel
-              ctaLabel="Retry loading decisions"
-              message={
-                error instanceof Error ? error.message : "Unexpected error"
-              }
-              onRetry={onRetry}
-              title="Unable to load decisions"
-            />
-          ) : null}
+        {canReadDecisions ? (
+          <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-md">
+            {isPending || isTablePreferenceHydrating ? (
+              <TableSkeleton rows={8} />
+            ) : null}
 
-          {!isPending && !isTablePreferenceHydrating && !isError && data ? (
-            <DecisionList
-              columnOrder={effectiveTablePreference.columnOrder}
-              decisions={data}
-              density={effectiveTablePreference.density}
-              visibleColumns={effectiveTablePreference.visibleColumns}
-            />
-          ) : null}
-        </section>
+            {isError ? (
+              <RetryPanel
+                ctaLabel="Retry loading decisions"
+                message={
+                  error instanceof Error ? error.message : "Unexpected error"
+                }
+                onRetry={onRetry}
+                title="Unable to load decisions"
+              />
+            ) : null}
+
+            {!isPending && !isTablePreferenceHydrating && !isError && data ? (
+              <DecisionList
+                columnOrder={effectiveTablePreference.columnOrder}
+                decisions={data}
+                density={effectiveTablePreference.density}
+                visibleColumns={effectiveTablePreference.visibleColumns}
+              />
+            ) : null}
+          </section>
+        ) : null}
       </section>
     </AuthGate>
   );

@@ -41,7 +41,11 @@ vi.mock("@/hooks/use-update-table-preference-mutation", () => ({
 describe("decisions page", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/decisions");
-    useAuthStore.setState({ sessionToken: "jwt-token" });
+    useAuthStore.setState({
+      sessionToken: "jwt-token",
+      accessContext: { role: "operator", organizationId: "org-1" },
+      isAccessHydrating: false,
+    });
     mockUseDecisionsQuery.mockReset();
     mockUseDecisionEvents.mockReset();
     mockUseSavedViewsQuery.mockReset();
@@ -153,7 +157,11 @@ describe("decisions page", () => {
   });
 
   it("blocks access when token is missing", () => {
-    useAuthStore.setState({ sessionToken: null });
+    useAuthStore.setState({
+      sessionToken: null,
+      accessContext: null,
+      isAccessHydrating: false,
+    });
     mockUseDecisionsQuery.mockReturnValue({
       data: [],
       isPending: false,
@@ -640,5 +648,32 @@ describe("decisions page", () => {
     const panel = screen.getByTestId("table-settings-panel");
     expect(panel.className).toContain("absolute");
     expect(panel.className).toContain("z-30");
+  });
+
+  it("hides mutating toolbar actions for viewer role", () => {
+    useAuthStore.setState({
+      sessionToken: "jwt-token",
+      accessContext: { role: "viewer", organizationId: "org-1" },
+      isAccessHydrating: false,
+    });
+    mockUseDecisionsQuery.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<DecisionsPageClient />);
+
+    expect(
+      screen.queryByRole("button", { name: /save current filters/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /delete saved view/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /table settings/i }),
+    ).not.toBeInTheDocument();
   });
 });
