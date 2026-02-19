@@ -68,6 +68,56 @@ class OrganizationMembership(models.Model):
         return f"{self.user_id}:{self.organization_id}:{self.role}"
 
 
+WEBHOOK_EVENT_DECISION_CREATED = "decision.created"
+WEBHOOK_EVENT_DECISION_UPDATED = "decision.updated"
+WEBHOOK_EVENT_DECISION_SUBMITTED = "decision.submitted"
+WEBHOOK_EVENT_DECISION_RETRY_REQUESTED = "decision.retry_requested"
+WEBHOOK_EVENT_DECISION_FAILED = "decision.failed"
+WEBHOOK_EVENT_DECISION_COMPLETED = "decision.completed"
+
+WEBHOOK_EVENT_TYPES = (
+    WEBHOOK_EVENT_DECISION_CREATED,
+    WEBHOOK_EVENT_DECISION_UPDATED,
+    WEBHOOK_EVENT_DECISION_SUBMITTED,
+    WEBHOOK_EVENT_DECISION_RETRY_REQUESTED,
+    WEBHOOK_EVENT_DECISION_FAILED,
+    WEBHOOK_EVENT_DECISION_COMPLETED,
+)
+
+
+class WebhookSubscription(models.Model):
+    """Organization-scoped endpoint registration for outbound events."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="webhook_subscriptions",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="webhook_subscriptions",
+    )
+    target_url = models.URLField(max_length=500)
+    signing_secret = models.CharField(max_length=255)
+    events = models.JSONField(default=list)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "webhook_subscriptions"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["organization", "is_active"]),
+            models.Index(fields=["organization", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.organization_id}:{self.target_url}"
+
+
 def get_default_organization() -> Organization:
     """Return singleton default organization, creating it when missing."""
     organization, _created = Organization.objects.get_or_create(name="Default")
