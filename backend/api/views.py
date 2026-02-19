@@ -22,6 +22,12 @@ from api.serializers import (
     inject_access_context_claims,
 )
 from api.services.webhook_dispatcher import replay_webhook_delivery
+from api.services.webhook_observability import (
+    build_delivery_timeline,
+    compute_webhook_metrics,
+    force_retry_delivery,
+    reactivate_webhook_subscription,
+)
 from core.permissions import (
     get_user_membership_or_raise,
     require_read_role,
@@ -135,6 +141,17 @@ class WebhookSubscriptionViewSet(ModelViewSet):
         require_write_role(membership)
         instance.delete()
 
+    @action(detail=True, methods=["post"], url_path="reactivate")
+    def reactivate(self, request, pk=None):
+        membership = get_user_membership_or_raise(request.user)
+        require_write_role(membership)
+        subscription = self.get_object()
+        actor_id = str(request.user.id) if request.user and request.user.id else ""
+        reactivate_webhook_subscription(subscription=subscription, actor_id=actor_id)
+
+        serializer = WebhookSubscriptionSerializer(subscription)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 class WebhookDeliveryPagination(PageNumberPagination):
     page_size = 50
@@ -169,6 +186,21 @@ class WebhookDeliveryViewSet(
             return WebhookDeliveryDetailSerializer
         return WebhookDeliveryListSerializer
 
+    @action(detail=False, methods=["get"], url_path="metrics")
+    def metrics(self, request):
+        membership = get_user_membership_or_raise(request.user)
+        require_read_role(membership)
+        payload = compute_webhook_metrics(organization=membership.organization)
+        return Response(payload, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get"], url_path="timeline")
+    def timeline(self, request, pk=None):
+        membership = get_user_membership_or_raise(request.user)
+        require_read_role(membership)
+        delivery = self.get_object()
+        payload = build_delivery_timeline(delivery=delivery)
+        return Response(payload, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=["post"], url_path="replay")
     def replay(self, request, pk=None):
         membership = get_user_membership_or_raise(request.user)
@@ -181,6 +213,21 @@ class WebhookDeliveryViewSet(
         replay_webhook_delivery(delivery)
         delivery.refresh_from_db()
 
+        serializer = WebhookDeliveryDetailSerializer(delivery)
+        return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["post"], url_path="force-retry")
+    def force_retry(self, request, pk=None):
+        membership = get_user_membership_or_raise(request.user)
+        require_write_role(membership)
+        delivery = self.get_object()
+
+        if delivery.status != WebhookDelivery.Status.FAILED:
+            raise ValidationError({"status": "Only failed deliveries can be replayed."})
+
+        actor_id = str(request.user.id) if request.user and request.user.id else ""
+        force_retry_delivery(delivery=delivery, actor_id=actor_id)
+        delivery.refresh_from_db()
         serializer = WebhookDeliveryDetailSerializer(delivery)
         return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
 

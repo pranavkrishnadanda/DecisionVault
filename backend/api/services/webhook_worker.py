@@ -9,6 +9,10 @@ from django.utils import timezone
 
 from api.models import WebhookDelivery, WebhookDeliveryAttempt
 from api.services.webhook_dispatcher import enqueue_webhook_dead_letter
+from api.services.webhook_observability import (
+    log_delivery_event,
+    log_subscription_event,
+)
 from api.services.webhook_signing import build_signature_headers
 
 logger = logging.getLogger(__name__)
@@ -64,8 +68,19 @@ def _apply_circuit_breaker_on_failure(delivery: WebhookDelivery) -> None:
         created_at__gte=window_floor,
     ).count()
     if recent_failures >= CIRCUIT_BREAKER_FAILURE_THRESHOLD:
+        previous_is_active = delivery.subscription.is_active
         delivery.subscription.is_active = False
         delivery.subscription.save(update_fields=["is_active", "updated_at"])
+        if previous_is_active:
+            log_subscription_event(
+                subscription=delivery.subscription,
+                event="breaker_open",
+                actor_type="system",
+                actor_id="",
+                previous_state={"is_active": previous_is_active},
+                current_state={"is_active": delivery.subscription.is_active},
+                metadata={"recent_failures": recent_failures},
+            )
         logger.error(
             "Webhook subscription auto-disabled by circuit breaker",
             extra={
@@ -92,6 +107,15 @@ def _finalize_terminal_failure(delivery: WebhookDelivery, reason: str) -> None:
         ]
     )
     enqueue_webhook_dead_letter(str(delivery.id), reason=reason)
+    log_delivery_event(
+        delivery=delivery,
+        event="dlq_routed",
+        actor_type="system",
+        actor_id="",
+        previous_state=None,
+        current_state={"status": delivery.status},
+        metadata={"reason": reason},
+    )
 
 
 def process_webhook_delivery(delivery_id: str) -> bool:
@@ -112,6 +136,15 @@ def process_webhook_delivery(delivery_id: str) -> bool:
         if _is_rate_limited(delivery):
             delivery.next_retry_at = timezone.now() + timedelta(seconds=5)
             delivery.save(update_fields=["next_retry_at", "updated_at"])
+            log_delivery_event(
+                delivery=delivery,
+                event="throttled",
+                actor_type="system",
+                actor_id="",
+                previous_state=None,
+                current_state={"status": delivery.status},
+                metadata={"reason": "rate_limit"},
+            )
             return False
 
         attempt_number = delivery.attempt_count + 1
