@@ -85,6 +85,29 @@ describe("app shell", () => {
     expect(screen.queryByText("secure content")).not.toBeInTheDocument();
   });
 
+  it("hides sign out action when unauthenticated", () => {
+    useAuthStore.setState({
+      sessionToken: null,
+      accessContext: null,
+      isAccessHydrating: false,
+    });
+
+    render(
+      <AppShell>
+        <AuthGate>
+          <div>secure content</div>
+        </AuthGate>
+      </AppShell>,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /sign out/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("link", { name: /go to login/i }).length,
+    ).toBeGreaterThan(0);
+  });
+
   it("keeps stable active route on refresh render", () => {
     window.history.replaceState({}, "", "/settings");
 

@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { logoutSessionRequest } from "@/api/session";
 import { useAccessControl } from "@/hooks/use-access-control";
-import { useAuthStore } from "@/state/auth-store";
+import { selectSessionToken, useAuthStore } from "@/state/auth-store";
 import { Sidebar, type SidebarItem } from "@/ui/layout/sidebar";
 import { Topbar } from "@/ui/layout/topbar";
 
@@ -19,6 +19,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
   const { isAccessHydrating, organizationId, role } = useAccessControl();
+  const sessionToken = useAuthStore(selectSessionToken);
   const clearSessionToken = useAuthStore((state) => state.clearSessionToken);
 
   const onToggleCollapsed = useCallback(() => {
@@ -43,6 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
         <main className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-lg backdrop-blur">
           <Topbar
+            isAuthenticated={Boolean(sessionToken)}
             isHydrating={isAccessHydrating}
             onLogout={onLogout}
             organizationId={organizationId}
