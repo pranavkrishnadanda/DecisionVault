@@ -1,5 +1,5 @@
 import { DecisionDetailPageClient } from "@/ui/features/decisions/decision-detail-page-client";
-import { OperatorShell } from "@/ui/layout/operator-shell";
+import { AppShell } from "@/ui/layout/app-shell";
 
 export default async function DecisionDetailPage({
   params,
@@ -9,8 +9,8 @@ export default async function DecisionDetailPage({
   const { decisionId } = await params;
 
   return (
-    <OperatorShell>
+    <AppShell>
       <DecisionDetailPageClient decisionId={decisionId} />
-    </OperatorShell>
+    </AppShell>
   );
 }

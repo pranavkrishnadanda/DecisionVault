@@ -1,10 +1,10 @@
 import { WebhookOpsPageClient } from "@/ui/features/webhooks/webhook-ops-page-client";
-import { OperatorShell } from "@/ui/layout/operator-shell";
+import { AppShell } from "@/ui/layout/app-shell";
 
 export default function WebhooksPage() {
   return (
-    <OperatorShell>
+    <AppShell>
       <WebhookOpsPageClient />
-    </OperatorShell>
+    </AppShell>
   );
 }
