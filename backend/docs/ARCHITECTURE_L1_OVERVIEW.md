@@ -194,13 +194,15 @@ Client Request
 
 | Module | Registered in `INSTALLED_APPS` | Status |
 |--------|-------------------------------|--------|
-| `api` | ❌ Not registered | Skeleton only |
-| `ingestion` | ❌ Not registered | Skeleton only |
-| `verification` | ❌ Not registered | Skeleton only |
-| `workers` | ❌ Not registered | Skeleton only |
+| `api` | ✅ Registered | Active |
+| `ingestion` | ✅ Registered | Active |
+| `verification` | ✅ Registered | Active |
+| `workers` | ✅ Registered | Active |
+| `decisions` | ✅ Registered | Active |
+| `app.slack` | ✅ Registered | Active |
 | `core` | ✅ Implicit (settings module) | Active |
 
-**Note**: Modules exist as Django apps but are not yet registered in `settings.py`. Registration required for full functionality.
+Slack integration routes are available under `/api/slack/` and integration management routes under `/api/v1/integrations/.../slack/...`.
 
 ---
 

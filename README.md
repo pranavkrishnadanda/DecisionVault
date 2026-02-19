@@ -10,11 +10,12 @@ Production-grade Slack OAuth + channel discovery + message history + test delive
 
 ## End-to-End Flow
 1. User clicks `Add Slack` on `/integrations/slack`.
-2. Browser is redirected to `GET /api/slack/install`.
+2. Frontend requests install URL via `GET /api/v1/integrations/{integration_id}/slack/install-url/`.
 3. Slack OAuth consent screen opens.
-4. Slack redirects to `GET /api/slack/callback`.
-5. Server exchanges code for token server-side, encrypts token at rest, stores integration.
-6. Frontend returns to `/integrations/slack?status=success`, loads channels/messages, and can send test message.
+4. Slack redirects to `/oauth/slack/callback` (frontend route).
+5. Frontend completes OAuth by calling `POST /api/v1/integrations/{integration_id}/slack/oauth-callback/`.
+6. Server exchanges code for token server-side, encrypts token at rest, stores integration.
+7. Frontend returns to `/integrations/slack?status=success`, loads channels/messages, and can send test message.
 
 No end user ever sees client secret or bot token.
 
@@ -22,8 +23,8 @@ No end user ever sees client secret or bot token.
 1. Go to https://api.slack.com/apps and create an app (From Scratch).
 2. Choose a dev workspace.
 3. OAuth & Permissions:
-   - Redirect URL (dev): `https://<your-ngrok>/api/slack/callback`
-   - Redirect URL (prod): `https://yourdomain.com/api/slack/callback`
+   - Redirect URL (dev): `https://<your-ngrok>/oauth/slack/callback`
+   - Redirect URL (prod): `https://yourdomain.com/oauth/slack/callback`
 4. Add bot scopes:
    - `channels:read`
    - `channels:history`
@@ -61,21 +62,22 @@ Slack OAuth redirect URIs and Events API require HTTPS.
 
 Run:
 ```bash
-./scripts/setup-tunnel.sh 8000
+./scripts/setup-tunnel.sh 3000
 ```
 
 This script:
 - installs ngrok if missing (via Homebrew)
 - starts tunnel to localhost
 - prints HTTPS URL
-- reminds you to update Slack redirect URI
+- writes `NEXT_PUBLIC_SLACK_REDIRECT_URI` into `frontend/.env.local`
+- writes `SLACK_REDIRECT_BASE_URL` and updates `ALLOWED_HOSTS` in `backend/.env`
 
 Important: free ngrok URLs rotate on restart.
 
 ### Option 2: Cloudflare Tunnel
 Run:
 ```bash
-./scripts/setup-cloudflare-tunnel.sh 8000
+./scripts/setup-cloudflare-tunnel.sh 3000
 ```
 
 This is often more stable for longer-running demo/dev sessions.
@@ -97,28 +99,42 @@ Run on VPS:
 ./scripts/setup-letsencrypt-nginx.sh yourdomain.com admin@yourdomain.com
 ```
 
-## Local Development
-1. Start infra:
+## Local Development (Redis/RabbitMQ Local, Not Docker)
+1. Start Redis locally:
 ```bash
-docker-compose up -d postgres redis
+redis-server
 ```
-2. Backend:
+2. Start RabbitMQ locally:
+```bash
+rabbitmq-server
+```
+3. Start PostgreSQL locally (your own installation/service), then backend:
 ```bash
 cd backend
 uv sync
 source .venv/bin/activate
+python manage.py migrate
 python manage.py runserver 0.0.0.0:8000
 ```
-3. Frontend:
+4. Start frontend:
 ```bash
 cd frontend
 npm ci
 npm run dev
 ```
+5. Start HTTPS tunnel for frontend callback:
+```bash
+cd ..
+./scripts/setup-tunnel.sh 3000
+```
 
 ## API Surface
-- `GET /api/slack/install`
-- `GET /api/slack/callback`
+- `GET /api/v1/integrations/{integration_id}/slack/install-url/`
+- `POST /api/v1/integrations/{integration_id}/slack/oauth-callback/`
+- `GET /api/v1/integrations/{integration_id}/slack/channels/`
+- `POST /api/v1/integrations/{integration_id}/slack/test/`
+- `GET /api/v1/integrations/{integration_id}/deliveries/`
+- `GET /api/slack/integrations`
 - `GET /api/slack/channels?integration_id=...`
 - `GET /api/slack/messages?integration_id=...&channel_id=...&oldest=...&limit=100`
 - `POST /api/slack/test`
