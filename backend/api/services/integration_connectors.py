@@ -195,11 +195,17 @@ def send_slack_test_message(integration: Integration, *, channel_id: str) -> int
         raise SlackServiceError("Slack test delivery failed.", 502) from exc
 
     if response.status_code >= 400:
-        raise SlackServiceError("Slack test delivery failed.", 502)
+        raise SlackServiceError(
+            f"Slack test delivery failed with HTTP {response.status_code}.",
+            502,
+        )
 
     payload = response.json()
     if not payload.get("ok", False):
-        raise SlackServiceError("Slack test delivery failed.", 502)
+        slack_error = payload.get("error")
+        if isinstance(slack_error, str) and slack_error.strip():
+            raise SlackServiceError(f"Slack test delivery failed: {slack_error}", 400)
+        raise SlackServiceError("Slack test delivery failed.", 400)
     return response.status_code
 
 

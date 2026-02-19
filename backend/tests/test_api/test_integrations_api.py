@@ -479,7 +479,10 @@ class TestIntegrationAPI:
                 format="json",
             )
 
-        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert (
+            response.json()["detail"] == "Slack test delivery failed: channel_not_found"
+        )
         delivery = IntegrationDelivery.objects.latest("created_at")
         assert delivery.status == IntegrationDelivery.Status.FAILED
         attempt = IntegrationDeliveryAttempt.objects.get(delivery=delivery)

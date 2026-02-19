@@ -13,8 +13,23 @@ export async function GET(
     BACKEND_BASE_URL,
   );
 
+  const configuredRedirectUri =
+    process.env.NEXT_PUBLIC_SLACK_REDIRECT_URI?.trim() ?? "";
+
   request.nextUrl.searchParams.forEach((value, key) => {
-    upstreamUrl.searchParams.set(key, value);
+    if (key !== "redirect_uri") {
+      upstreamUrl.searchParams.set(key, value);
+      return;
+    }
+
+    const shouldOverrideWithConfigured =
+      configuredRedirectUri.length > 0 &&
+      (value.trim().length === 0 || value.startsWith("http://localhost"));
+
+    upstreamUrl.searchParams.set(
+      key,
+      shouldOverrideWithConfigured ? configuredRedirectUri : value,
+    );
   });
 
   const upstream = await fetch(upstreamUrl, {

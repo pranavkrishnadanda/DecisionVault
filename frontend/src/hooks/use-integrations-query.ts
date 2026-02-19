@@ -114,6 +114,15 @@ export function useDeleteIntegrationMutation() {
 }
 
 function resolveSlackRedirectUri() {
+  const configuredRedirectUri =
+    process.env.NEXT_PUBLIC_SLACK_REDIRECT_URI?.trim() ?? "";
+  if (
+    configuredRedirectUri.length > 0 &&
+    configuredRedirectUri !== "undefined" &&
+    configuredRedirectUri !== "null"
+  ) {
+    return configuredRedirectUri;
+  }
   if (typeof window === "undefined") {
     return "http://localhost:3000/oauth/slack/callback";
   }

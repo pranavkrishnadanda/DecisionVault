@@ -30,6 +30,8 @@ vi.mock("@/state/auth-store", () => ({
 }));
 
 describe("slack oauth callback", () => {
+  const originalSlackRedirectUri = process.env.NEXT_PUBLIC_SLACK_REDIRECT_URI;
+
   beforeEach(() => {
     mockReplace.mockReset();
     mockUseSearchParams.mockReset();
@@ -53,6 +55,11 @@ describe("slack oauth callback", () => {
       },
     });
     mockUseAuthStore.mockReturnValue("jwt-token");
+    if (originalSlackRedirectUri === undefined) {
+      delete process.env.NEXT_PUBLIC_SLACK_REDIRECT_URI;
+    } else {
+      process.env.NEXT_PUBLIC_SLACK_REDIRECT_URI = originalSlackRedirectUri;
+    }
   });
 
   it("completes oauth callback and resumes integrations inline flow", async () => {
@@ -73,6 +80,27 @@ describe("slack oauth callback", () => {
       expect(mockReplace).toHaveBeenCalledWith(
         "/integrations?integrationId=int-2&oauth=success",
       );
+    });
+  });
+
+  it("uses configured redirect URI for oauth completion", async () => {
+    process.env.NEXT_PUBLIC_SLACK_REDIRECT_URI =
+      "https://decisionvault.ngrok-free.app/oauth/slack/callback";
+    const mutateAsync = vi.fn().mockResolvedValue({});
+    mockUseCompleteSlackOAuthMutation.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+    });
+
+    render(<SlackOAuthCallbackClient />);
+
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith({
+        integrationId: "int-2",
+        code: "oauth-code",
+        redirectUri:
+          "https://decisionvault.ngrok-free.app/oauth/slack/callback",
+      });
     });
   });
 

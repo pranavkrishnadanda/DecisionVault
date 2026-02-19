@@ -28,11 +28,46 @@ function createWrapper(client: QueryClient) {
 }
 
 describe("useSlackConnectMutation", () => {
+  const originalSlackRedirectUri = process.env.NEXT_PUBLIC_SLACK_REDIRECT_URI;
+
   beforeEach(() => {
     mockGetSlackInstallUrl.mockReset();
+    if (originalSlackRedirectUri === undefined) {
+      delete process.env.NEXT_PUBLIC_SLACK_REDIRECT_URI;
+    } else {
+      process.env.NEXT_PUBLIC_SLACK_REDIRECT_URI = originalSlackRedirectUri;
+    }
   });
 
-  it("uses canonical callback redirect URI without dynamic query params", async () => {
+  it("Given configured HTTPS redirect URI, when requesting install URL, then it uses env value", async () => {
+    process.env.NEXT_PUBLIC_SLACK_REDIRECT_URI =
+      "https://decisionvault.ngrok-free.app/oauth/slack/callback";
+    mockGetSlackInstallUrl.mockResolvedValue(
+      "https://slack.com/oauth/v2/authorize",
+    );
+    const queryClient = new QueryClient();
+
+    const { result } = renderHook(() => useSlackConnectMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({
+        integrationId: "int-2",
+        resumeStep: "triggers",
+      });
+    });
+
+    await waitFor(() => {
+      expect(mockGetSlackInstallUrl).toHaveBeenCalledWith(
+        "int-2",
+        "https://decisionvault.ngrok-free.app/oauth/slack/callback",
+      );
+    });
+  });
+
+  it("Given no configured redirect URI, when requesting install URL, then it falls back to canonical localhost callback", async () => {
+    delete process.env.NEXT_PUBLIC_SLACK_REDIRECT_URI;
     mockGetSlackInstallUrl.mockResolvedValue(
       "https://slack.com/oauth/v2/authorize",
     );

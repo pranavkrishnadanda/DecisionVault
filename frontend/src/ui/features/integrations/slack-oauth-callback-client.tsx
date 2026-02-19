@@ -16,6 +16,15 @@ function buildCallbackRedirect(
 }
 
 function resolveRedirectUri() {
+  const configuredRedirectUri =
+    process.env.NEXT_PUBLIC_SLACK_REDIRECT_URI?.trim() ?? "";
+  if (
+    configuredRedirectUri.length > 0 &&
+    configuredRedirectUri !== "undefined" &&
+    configuredRedirectUri !== "null"
+  ) {
+    return configuredRedirectUri;
+  }
   return `${window.location.origin}/oauth/slack/callback`;
 }
 
