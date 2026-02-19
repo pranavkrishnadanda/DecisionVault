@@ -118,6 +118,99 @@ class WebhookSubscription(models.Model):
         return f"{self.organization_id}:{self.target_url}"
 
 
+class WebhookDelivery(models.Model):
+    """Persistent webhook delivery job for retryable async processing."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        DELIVERED = "delivered", "Delivered"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="webhook_deliveries",
+    )
+    subscription = models.ForeignKey(
+        "api.WebhookSubscription",
+        on_delete=models.CASCADE,
+        related_name="deliveries",
+    )
+    event_type = models.CharField(max_length=120)
+    payload = models.JSONField(default=dict)
+    status = models.CharField(
+        max_length=24,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    attempt_count = models.PositiveIntegerField(default=0)
+    max_attempts = models.PositiveIntegerField(default=3)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    next_retry_at = models.DateTimeField(null=True, blank=True)
+    last_response_status = models.PositiveIntegerField(null=True, blank=True)
+    last_error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "webhook_deliveries"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["organization", "status"]),
+            models.Index(fields=["organization", "created_at"]),
+            models.Index(fields=["subscription", "status"]),
+            models.Index(fields=["next_retry_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.organization_id}:{self.subscription_id}:{self.event_type}"
+
+
+class WebhookDeliveryAttempt(models.Model):
+    """Append-only delivery attempt log for observability and retries."""
+
+    class Status(models.TextChoices):
+        SUCCESS = "success", "Success"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        "api.Organization",
+        on_delete=models.CASCADE,
+        related_name="webhook_delivery_attempts",
+    )
+    delivery = models.ForeignKey(
+        "api.WebhookDelivery",
+        on_delete=models.CASCADE,
+        related_name="attempts",
+    )
+    attempt_number = models.PositiveIntegerField()
+    status = models.CharField(max_length=24, choices=Status.choices)
+    response_status = models.PositiveIntegerField(null=True, blank=True)
+    response_request_id = models.CharField(max_length=255, blank=True, default="")
+    error_message = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "webhook_delivery_attempts"
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["organization", "delivery"]),
+            models.Index(fields=["delivery", "attempt_number"]),
+            models.Index(fields=["created_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["delivery", "attempt_number"],
+                name="unique_webhook_delivery_attempt_number",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.delivery_id}:{self.attempt_number}:{self.status}"
+
+
 def get_default_organization() -> Organization:
     """Return singleton default organization, creating it when missing."""
     organization, _created = Organization.objects.get_or_create(name="Default")

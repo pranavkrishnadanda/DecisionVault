@@ -18,7 +18,13 @@ from rest_framework.exceptions import (
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from api.models import OrganizationRole
+from api.models import (
+    WEBHOOK_EVENT_DECISION_CREATED,
+    WEBHOOK_EVENT_DECISION_RETRY_REQUESTED,
+    WEBHOOK_EVENT_DECISION_SUBMITTED,
+    OrganizationRole,
+)
+from api.services.webhook_dispatcher import dispatch_event_to_webhooks
 from core.permissions import (
     get_user_membership_or_raise,
     require_decision_access_or_404,
@@ -224,6 +230,11 @@ class DecisionViewSet(viewsets.ViewSet):
         # Return response
         output_serializer = DecisionSerializer(decision)
         self._publish_decision_event(decision)
+        dispatch_event_to_webhooks(
+            organization=membership.organization,
+            event_type=WEBHOOK_EVENT_DECISION_CREATED,
+            payload={"decision": output_serializer.data},
+        )
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, pk=None):
@@ -276,6 +287,14 @@ class DecisionViewSet(viewsets.ViewSet):
         # Return response
         decision.refresh_from_db()
         self._publish_decision_event(decision)
+        dispatch_event_to_webhooks(
+            organization=membership.organization,
+            event_type=WEBHOOK_EVENT_DECISION_SUBMITTED,
+            payload={
+                "decision_id": str(decision.id),
+                "status": decision.status,
+            },
+        )
         return Response(
             {
                 "id": str(decision.id),
@@ -306,6 +325,14 @@ class DecisionViewSet(viewsets.ViewSet):
 
         decision.refresh_from_db()
         self._publish_decision_event(decision)
+        dispatch_event_to_webhooks(
+            organization=membership.organization,
+            event_type=WEBHOOK_EVENT_DECISION_RETRY_REQUESTED,
+            payload={
+                "decision_id": str(decision.id),
+                "status": decision.status,
+            },
+        )
         return Response(
             {
                 "id": str(decision.id),
