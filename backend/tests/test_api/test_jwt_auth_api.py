@@ -3,6 +3,7 @@
 import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import AccessToken
 
 from decisions.models import Decision, DecisionStatus
 
@@ -43,6 +44,18 @@ class TestJWTTokenEndpoints:
         data = response.json()
         assert "access" in data
         assert "refresh" in data
+
+    def test_obtain_token_includes_org_access_claims(self, api_client, user):
+        response = api_client.post(
+            "/api/v1/auth/token/",
+            {"username": user.username, "password": "pass1234"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        claims = AccessToken(response.json()["access"])
+        assert "organization_id" in claims
+        assert claims.get("role") in {"admin", "operator", "viewer"}
 
     def test_obtain_token_invalid_credentials_returns_401(self, api_client, user):
         response = api_client.post(
@@ -89,6 +102,22 @@ class TestJWTRegistrationEndpoint:
         assert "access" in payload
         assert "refresh" in payload
         assert payload["user"]["username"] == "new-operator"
+
+    def test_register_returns_access_with_org_claims(self, api_client):
+        response = api_client.post(
+            "/api/v1/auth/register/",
+            {
+                "username": "new-operator-claims",
+                "email": "new-operator-claims@example.com",
+                "password": "StrongPass123!",
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        claims = AccessToken(response.json()["access"])
+        assert "organization_id" in claims
+        assert claims.get("role") in {"admin", "operator", "viewer"}
 
     def test_register_duplicate_username_returns_400(self, api_client, user):
         response = api_client.post(
