@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useAccessControl } from "@/hooks/use-access-control";
 import { selectSessionToken, useAuthStore } from "@/state/auth-store";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const sessionToken = useAuthStore(selectSessionToken);
+  const { isAccessHydrating } = useAccessControl();
 
   if (!sessionToken) {
     return (
@@ -19,6 +21,18 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         >
           Go to login
         </Link>
+      </section>
+    );
+  }
+
+  if (isAccessHydrating) {
+    return (
+      <section
+        className="rounded-xl border border-slate-200 bg-white p-6"
+        data-testid="auth-hydration-skeleton"
+      >
+        <div className="h-4 w-56 animate-pulse rounded bg-slate-200" />
+        <div className="mt-3 h-3 w-80 animate-pulse rounded bg-slate-200" />
       </section>
     );
   }

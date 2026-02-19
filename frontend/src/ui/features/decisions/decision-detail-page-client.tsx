@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from "react";
 import type { DecisionDetailRecord } from "@/domain/decision-detail";
 import { buildDecisionTimeline } from "@/domain/decision-detail";
+import { useAccessControl } from "@/hooks/use-access-control";
 import { useDecisionDetailQuery } from "@/hooks/use-decision-detail-query";
 import { useDecisionRetryMutation } from "@/hooks/use-decision-retry-mutation";
 import { selectSessionToken, useAuthStore } from "@/state/auth-store";
@@ -181,11 +182,14 @@ export function DecisionDetailPageClient({
   decisionId: string;
 }) {
   const sessionToken = useAuthStore(selectSessionToken);
-  const isAuthenticated = Boolean(sessionToken);
+  const { isAccessHydrating, permissions } = useAccessControl();
+  const isAuthenticated = Boolean(sessionToken) && !isAccessHydrating;
+  const canReadDecisionDetail = permissions.canReadDecisionDetail;
+  const canRetryDecision = permissions.canRetryDecision;
 
   const { data, error, isError, isPending, refetch } = useDecisionDetailQuery(
     decisionId,
-    isAuthenticated,
+    isAuthenticated && canReadDecisionDetail,
   );
   const { mutate, isPending: isRetrying } = useDecisionRetryMutation();
 
@@ -209,6 +213,13 @@ export function DecisionDetailPageClient({
           </p>
         </header>
 
+        {!canReadDecisionDetail ? (
+          <section className="rounded-xl border border-amber-300/50 bg-amber-50 p-4 text-sm text-slate-700">
+            Your role does not allow viewing decision details in this
+            organization.
+          </section>
+        ) : null}
+
         {isPending ? <DetailSkeleton /> : null}
 
         {isError ? (
@@ -228,7 +239,7 @@ export function DecisionDetailPageClient({
             <WorkflowPanel decision={data} />
             <AuditPanel decision={data} />
             <RetryPanelSection
-              canRetry={data.status === "failed"}
+              canRetry={canRetryDecision && data.status === "failed"}
               isRetrying={isRetrying}
               onRetry={onRetryDecision}
             />

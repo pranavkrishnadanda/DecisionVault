@@ -17,7 +17,11 @@ vi.mock("@/api/auth", () => ({
 
 describe("auth flow", () => {
   beforeEach(() => {
-    useAuthStore.setState({ sessionToken: null });
+    useAuthStore.setState({
+      sessionToken: null,
+      accessContext: null,
+      isAccessHydrating: false,
+    });
     mockLoginWithPassword.mockReset();
     mockRegisterWithPassword.mockReset();
   });
@@ -34,7 +38,11 @@ describe("auth flow", () => {
   });
 
   it("allows dashboard content when authenticated", () => {
-    useAuthStore.setState({ sessionToken: "jwt-token" });
+    useAuthStore.setState({
+      sessionToken: "jwt-token",
+      accessContext: { role: "operator", organizationId: "org-1" },
+      isAccessHydrating: false,
+    });
 
     render(
       <AuthGate>
@@ -43,6 +51,23 @@ describe("auth flow", () => {
     );
 
     expect(screen.getByText("secure content")).toBeInTheDocument();
+  });
+
+  it("shows access hydration skeleton when auth context is loading", () => {
+    useAuthStore.setState({
+      sessionToken: "jwt-token",
+      accessContext: null,
+      isAccessHydrating: true,
+    });
+
+    render(
+      <AuthGate>
+        <div>secure content</div>
+      </AuthGate>,
+    );
+
+    expect(screen.getByTestId("auth-hydration-skeleton")).toBeInTheDocument();
+    expect(screen.queryByText("secure content")).not.toBeInTheDocument();
   });
 
   it("submits credentials, stores access token, and triggers success callback", async () => {

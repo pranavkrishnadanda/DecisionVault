@@ -7,6 +7,8 @@ import type {
 interface DecisionToolbarProps {
   activeSavedViewId: string;
   canDeleteSavedView: boolean;
+  canManageSavedViews: boolean;
+  canManageTablePreferences: boolean;
   density: TableDensity;
   isSavingTableSettings: boolean;
   isSavingView: boolean;
@@ -40,6 +42,8 @@ interface DecisionToolbarProps {
 export function DecisionToolbar({
   activeSavedViewId,
   canDeleteSavedView,
+  canManageSavedViews,
+  canManageTablePreferences,
   density,
   fromDate,
   isDeletingView,
@@ -178,84 +182,88 @@ export function DecisionToolbar({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <details
-          className="mr-auto relative"
-          data-testid="table-settings-popover"
-          ref={tableSettingsRef}
-        >
-          <summary className="inline-flex h-10 cursor-pointer list-none items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-            Table settings
-          </summary>
-          <div
-            className="absolute left-0 top-full z-30 mt-2 w-[320px] rounded-md border border-slate-200 bg-white p-3 shadow-lg"
-            data-testid="table-settings-panel"
+        {canManageTablePreferences ? (
+          <details
+            className="mr-auto relative"
+            data-testid="table-settings-popover"
+            ref={tableSettingsRef}
           >
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Columns
-              </p>
-              {tableColumns.map((column) => (
-                <div
-                  className="flex items-center justify-between gap-2"
-                  key={column.key}
-                >
-                  <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                    <input
-                      aria-label={`Column ${column.label}`}
-                      checked={column.visible}
-                      onChange={() => onToggleColumn(column.key)}
-                      type="checkbox"
-                    />
-                    {column.label}
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <button
-                      aria-label={`Move ${column.label} up`}
-                      className="h-7 rounded border border-slate-300 px-2 text-xs text-slate-700"
-                      onClick={() => onMoveColumnUp(column.key)}
-                      type="button"
-                    >
-                      Up
-                    </button>
-                    <button
-                      aria-label={`Move ${column.label} down`}
-                      className="h-7 rounded border border-slate-300 px-2 text-xs text-slate-700"
-                      onClick={() => onMoveColumnDown(column.key)}
-                      type="button"
-                    >
-                      Down
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-3 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Density
-              </p>
-              <select
-                aria-label="Density"
-                className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-700"
-                onChange={handleDensityChange}
-                value={density}
-              >
-                <option value="compact">Compact</option>
-                <option value="comfortable">Comfortable</option>
-                <option value="spacious">Spacious</option>
-              </select>
-            </div>
-
-            <button
-              className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60"
-              disabled={isSavingTableSettings}
-              onClick={handleSaveTableSettings}
-              type="button"
+            <summary className="inline-flex h-10 cursor-pointer list-none items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+              Table settings
+            </summary>
+            <div
+              className="absolute left-0 top-full z-30 mt-2 w-[320px] rounded-md border border-slate-200 bg-white p-3 shadow-lg"
+              data-testid="table-settings-panel"
             >
-              {isSavingTableSettings ? "Saving..." : "Save table settings"}
-            </button>
-          </div>
-        </details>
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Columns
+                </p>
+                {tableColumns.map((column) => (
+                  <div
+                    className="flex items-center justify-between gap-2"
+                    key={column.key}
+                  >
+                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        aria-label={`Column ${column.label}`}
+                        checked={column.visible}
+                        onChange={() => onToggleColumn(column.key)}
+                        type="checkbox"
+                      />
+                      {column.label}
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        aria-label={`Move ${column.label} up`}
+                        className="h-7 rounded border border-slate-300 px-2 text-xs text-slate-700"
+                        onClick={() => onMoveColumnUp(column.key)}
+                        type="button"
+                      >
+                        Up
+                      </button>
+                      <button
+                        aria-label={`Move ${column.label} down`}
+                        className="h-7 rounded border border-slate-300 px-2 text-xs text-slate-700"
+                        onClick={() => onMoveColumnDown(column.key)}
+                        type="button"
+                      >
+                        Down
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Density
+                </p>
+                <select
+                  aria-label="Density"
+                  className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-700"
+                  onChange={handleDensityChange}
+                  value={density}
+                >
+                  <option value="compact">Compact</option>
+                  <option value="comfortable">Comfortable</option>
+                  <option value="spacious">Spacious</option>
+                </select>
+              </div>
+
+              <button
+                className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60"
+                disabled={isSavingTableSettings}
+                onClick={handleSaveTableSettings}
+                type="button"
+              >
+                {isSavingTableSettings ? "Saving..." : "Save table settings"}
+              </button>
+            </div>
+          </details>
+        ) : (
+          <div className="mr-auto" />
+        )}
 
         <button
           className="inline-flex h-10 min-w-24 items-center justify-center whitespace-nowrap rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
@@ -266,23 +274,27 @@ export function DecisionToolbar({
           Clear
         </button>
 
-        <button
-          className="inline-flex h-10 min-w-40 items-center justify-center whitespace-nowrap rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-          disabled={isSavingView}
-          onClick={onSaveCurrentFilters}
-          type="button"
-        >
-          {isSavingView ? "Saving..." : "Save current filters"}
-        </button>
+        {canManageSavedViews ? (
+          <button
+            className="inline-flex h-10 min-w-40 items-center justify-center whitespace-nowrap rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+            disabled={isSavingView}
+            onClick={onSaveCurrentFilters}
+            type="button"
+          >
+            {isSavingView ? "Saving..." : "Save current filters"}
+          </button>
+        ) : null}
 
-        <button
-          className="inline-flex h-10 min-w-40 items-center justify-center whitespace-nowrap rounded-md border border-rose-300 bg-white px-4 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-60"
-          disabled={!canDeleteSavedView || isDeletingView}
-          onClick={onDeleteSavedView}
-          type="button"
-        >
-          {isDeletingView ? "Deleting..." : "Delete saved view"}
-        </button>
+        {canManageSavedViews ? (
+          <button
+            className="inline-flex h-10 min-w-40 items-center justify-center whitespace-nowrap rounded-md border border-rose-300 bg-white px-4 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-60"
+            disabled={!canDeleteSavedView || isDeletingView}
+            onClick={onDeleteSavedView}
+            type="button"
+          >
+            {isDeletingView ? "Deleting..." : "Delete saved view"}
+          </button>
+        ) : null}
 
         <button
           className="inline-flex h-10 min-w-40 items-center justify-center whitespace-nowrap rounded-md bg-slate-900 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
