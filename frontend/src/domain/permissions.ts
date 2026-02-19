@@ -6,6 +6,8 @@ export interface RolePermissions {
   canManageSavedViews: boolean;
   canManageTablePreferences: boolean;
   canRetryDecision: boolean;
+  canReadIntegrations: boolean;
+  canManageIntegrations: boolean;
 }
 
 const DENY_ALL: RolePermissions = Object.freeze({
@@ -14,6 +16,8 @@ const DENY_ALL: RolePermissions = Object.freeze({
   canManageSavedViews: false,
   canManageTablePreferences: false,
   canRetryDecision: false,
+  canReadIntegrations: false,
+  canManageIntegrations: false,
 });
 
 const VIEWER_PERMISSIONS: RolePermissions = Object.freeze({
@@ -22,6 +26,8 @@ const VIEWER_PERMISSIONS: RolePermissions = Object.freeze({
   canManageSavedViews: false,
   canManageTablePreferences: false,
   canRetryDecision: false,
+  canReadIntegrations: true,
+  canManageIntegrations: false,
 });
 
 const OPERATOR_PERMISSIONS: RolePermissions = Object.freeze({
@@ -30,6 +36,8 @@ const OPERATOR_PERMISSIONS: RolePermissions = Object.freeze({
   canManageSavedViews: true,
   canManageTablePreferences: true,
   canRetryDecision: true,
+  canReadIntegrations: true,
+  canManageIntegrations: true,
 });
 
 export function getRolePermissions(

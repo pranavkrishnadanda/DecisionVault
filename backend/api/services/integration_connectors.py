@@ -14,6 +14,13 @@ from api.models import Integration
 from api.services.credentials_vault import decrypt_credentials, encrypt_credentials
 
 
+class SlackServiceError(Exception):
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+
 def _render_template(template: str, *, event_type: str, payload: dict) -> str:
     text = template or "{{event_type}}"
     text = text.replace("{{event_type}}", event_type)
@@ -55,8 +62,12 @@ def refresh_slack_access_token(integration: Integration) -> dict:
     credentials["access_token"] = updated["access_token"]
     credentials["refresh_token"] = updated["refresh_token"]
     integration.credentials_encrypted = encrypt_credentials(credentials)
-    integration.token_expires_at = timezone.now() + timedelta(seconds=updated["expires_in"])
-    integration.save(update_fields=["credentials_encrypted", "token_expires_at", "updated_at"])
+    integration.token_expires_at = timezone.now() + timedelta(
+        seconds=updated["expires_in"]
+    )
+    integration.save(
+        update_fields=["credentials_encrypted", "token_expires_at", "updated_at"]
+    )
 
     return updated
 
@@ -100,6 +111,95 @@ def _send_slack(integration: Integration, *, event_type: str, payload: dict) -> 
     body = response.json()
     if not body.get("ok", False):
         raise ValueError("Slack delivery failed")
+    return response.status_code
+
+
+def list_slack_public_channels(integration: Integration) -> list[dict]:
+    if integration.connector_type != Integration.ConnectorType.SLACK:
+        raise SlackServiceError("Integration is not Slack.", 400)
+
+    try:
+        access_token = _ensure_slack_token(integration)
+    except ValueError as exc:
+        raise SlackServiceError(str(exc), 400) from exc
+
+    try:
+        with httpx.Client(timeout=10) as client:
+            response = client.get(
+                "https://slack.com/api/conversations.list",
+                params={
+                    "exclude_archived": "true",
+                    "limit": 200,
+                    "types": "public_channel",
+                },
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+    except httpx.HTTPError as exc:
+        raise SlackServiceError("Slack channel discovery failed.", 502) from exc
+
+    if response.status_code >= 400:
+        raise SlackServiceError("Slack channel discovery failed.", 502)
+
+    payload = response.json()
+    if not payload.get("ok"):
+        raise SlackServiceError("Slack channel discovery failed.", 502)
+
+    channels = payload.get("channels", [])
+    if not isinstance(channels, list):
+        return []
+
+    result = []
+    for channel in channels:
+        if not isinstance(channel, dict):
+            continue
+        channel_id = channel.get("id")
+        channel_name = channel.get("name")
+        is_channel = bool(channel.get("is_channel", True))
+        is_private = bool(channel.get("is_private", False))
+        if (
+            isinstance(channel_id, str)
+            and isinstance(channel_name, str)
+            and channel_id.strip()
+            and channel_name.strip()
+            and is_channel
+            and not is_private
+        ):
+            result.append({"id": channel_id, "name": channel_name})
+    return result
+
+
+def send_slack_test_message(integration: Integration, *, channel_id: str) -> int:
+    if integration.connector_type != Integration.ConnectorType.SLACK:
+        raise SlackServiceError("Integration is not Slack.", 400)
+
+    target_channel = channel_id.strip()
+    if not target_channel:
+        raise SlackServiceError("Slack channel_id is required.", 400)
+
+    try:
+        access_token = _ensure_slack_token(integration)
+    except ValueError as exc:
+        raise SlackServiceError(str(exc), 400) from exc
+
+    try:
+        with httpx.Client(timeout=10) as client:
+            response = client.post(
+                "https://slack.com/api/chat.postMessage",
+                json={
+                    "channel": target_channel,
+                    "text": "DecisionVault test delivery",
+                },
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+    except httpx.HTTPError as exc:
+        raise SlackServiceError("Slack test delivery failed.", 502) from exc
+
+    if response.status_code >= 400:
+        raise SlackServiceError("Slack test delivery failed.", 502)
+
+    payload = response.json()
+    if not payload.get("ok", False):
+        raise SlackServiceError("Slack test delivery failed.", 502)
     return response.status_code
 
 
@@ -154,7 +254,9 @@ def _send_email(integration: Integration, *, event_type: str, payload: dict) -> 
     return 250
 
 
-def send_integration_message(integration: Integration, *, event_type: str, payload: dict) -> int:
+def send_integration_message(
+    integration: Integration, *, event_type: str, payload: dict
+) -> int:
     connector_type = integration.connector_type
     if connector_type == Integration.ConnectorType.SLACK:
         return _send_slack(integration, event_type=event_type, payload=payload)

@@ -1,12 +1,15 @@
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import (
     Integration,
+    IntegrationDelivery,
+    IntegrationDeliveryAttempt,
     Organization,
     OrganizationMembership,
     OrganizationRole,
@@ -213,3 +216,289 @@ class TestIntegrationAPI:
         assert credentials["access_token"] == "xoxb-new"
         assert credentials["refresh_token"] == "refresh-new"
         assert integration.token_expires_at is not None
+
+    def test_slack_channels_auth_required(self, anonymous_client, admin_a, org_a):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack OAuth",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "COPS"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+
+        response = anonymous_client.get(
+            f"/api/v1/integrations/{integration.id}/slack/channels/"
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_viewer_blocked_from_slack_channels(self, viewer_a_client, admin_a, org_a):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack OAuth",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "COPS"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+
+        response = viewer_a_client.get(
+            f"/api/v1/integrations/{integration.id}/slack/channels/"
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_cross_org_slack_channels_returns_404(
+        self, admin_a_client, operator_b, org_b
+    ):
+        integration = Integration.objects.create(
+            organization=org_b,
+            created_by=operator_b,
+            name="Other Org Slack",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "COPS"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+
+        response = admin_a_client.get(
+            f"/api/v1/integrations/{integration.id}/slack/channels/"
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_slack_channels_non_slack_integration_returns_400(
+        self, admin_a_client, admin_a, org_a
+    ):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Teams Connector",
+            connector_type=Integration.ConnectorType.TEAMS,
+            config={"message_template": "x"},
+            credentials_encrypted=encrypt_credentials({"webhook_url": "https://x"}),
+        )
+
+        response = admin_a_client.get(
+            f"/api/v1/integrations/{integration.id}/slack/channels/"
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_slack_channels_success_returns_public_channel_list(
+        self, admin_a_client, admin_a, org_a
+    ):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack OAuth",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "COPS"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+
+        with patch(
+            "api.services.integration_connectors.httpx.Client.get",
+            return_value=httpx.Response(
+                status_code=200,
+                json={
+                    "ok": True,
+                    "channels": [
+                        {
+                            "id": "COPS",
+                            "name": "ops-alerts",
+                            "is_channel": True,
+                            "is_private": False,
+                        },
+                        {
+                            "id": "GPRIV",
+                            "name": "private-room",
+                            "is_channel": True,
+                            "is_private": True,
+                        },
+                    ],
+                },
+            ),
+        ):
+            response = admin_a_client.get(
+                f"/api/v1/integrations/{integration.id}/slack/channels/"
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["channels"] == [{"id": "COPS", "name": "ops-alerts"}]
+
+    def test_slack_channels_upstream_failure_returns_502(
+        self, admin_a_client, admin_a, org_a
+    ):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack OAuth",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "COPS"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+
+        with patch(
+            "api.services.integration_connectors.httpx.Client.get",
+            side_effect=httpx.HTTPError("slack down"),
+        ):
+            response = admin_a_client.get(
+                f"/api/v1/integrations/{integration.id}/slack/channels/"
+            )
+
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+
+    def test_slack_channels_without_token_returns_400(
+        self, admin_a_client, admin_a, org_a
+    ):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack OAuth",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "COPS"},
+            credentials_encrypted=encrypt_credentials({}),
+        )
+
+        response = admin_a_client.get(
+            f"/api/v1/integrations/{integration.id}/slack/channels/"
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_slack_test_auth_required(self, anonymous_client, admin_a, org_a):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack OAuth",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "COPS"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+
+        response = anonymous_client.post(
+            f"/api/v1/integrations/{integration.id}/slack/test/",
+            {"channel_id": "COPS"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_viewer_blocked_from_slack_test(self, viewer_a_client, admin_a, org_a):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack OAuth",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "COPS"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+
+        response = viewer_a_client.post(
+            f"/api/v1/integrations/{integration.id}/slack/test/",
+            {"channel_id": "COPS"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_cross_org_slack_test_returns_404(self, admin_a_client, operator_b, org_b):
+        integration = Integration.objects.create(
+            organization=org_b,
+            created_by=operator_b,
+            name="Other Org Slack",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "COPS"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+
+        response = admin_a_client.post(
+            f"/api/v1/integrations/{integration.id}/slack/test/",
+            {"channel_id": "COPS"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_slack_test_success_logs_attempt(self, admin_a_client, admin_a, org_a):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack OAuth",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "COPS"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+
+        with patch(
+            "api.services.integration_connectors.httpx.Client.post",
+            return_value=httpx.Response(status_code=200, json={"ok": True}),
+        ):
+            response = admin_a_client.post(
+                f"/api/v1/integrations/{integration.id}/slack/test/",
+                {"channel_id": "COPS"},
+                format="json",
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["accepted"] is True
+        assert payload["delivery_id"]
+
+        delivery = IntegrationDelivery.objects.get(id=payload["delivery_id"])
+        assert delivery.status == IntegrationDelivery.Status.DELIVERED
+        assert delivery.attempt_count == 1
+        attempt = IntegrationDeliveryAttempt.objects.get(delivery=delivery)
+        assert attempt.status == IntegrationDeliveryAttempt.Status.SUCCESS
+
+    def test_slack_test_failure_logs_failed_attempt(
+        self, admin_a_client, admin_a, org_a
+    ):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack OAuth",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={"channel_id": "COPS"},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+
+        with patch(
+            "api.services.integration_connectors.httpx.Client.post",
+            return_value=httpx.Response(
+                status_code=200,
+                json={"ok": False, "error": "channel_not_found"},
+            ),
+        ):
+            response = admin_a_client.post(
+                f"/api/v1/integrations/{integration.id}/slack/test/",
+                {"channel_id": "CMISSING"},
+                format="json",
+            )
+
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        delivery = IntegrationDelivery.objects.latest("created_at")
+        assert delivery.status == IntegrationDelivery.Status.FAILED
+        attempt = IntegrationDeliveryAttempt.objects.get(delivery=delivery)
+        assert attempt.status == IntegrationDeliveryAttempt.Status.FAILED
+
+    def test_slack_test_missing_channel_returns_400(
+        self, admin_a_client, admin_a, org_a
+    ):
+        integration = Integration.objects.create(
+            organization=org_a,
+            created_by=admin_a,
+            name="Slack OAuth",
+            connector_type=Integration.ConnectorType.SLACK,
+            config={},
+            credentials_encrypted=encrypt_credentials({"access_token": "xoxb-new"}),
+        )
+
+        response = admin_a_client.post(
+            f"/api/v1/integrations/{integration.id}/slack/test/",
+            {},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST

@@ -37,10 +37,15 @@ from api.services.auth_tokens import (
     rotate_refresh_token,
 )
 from api.services.credentials_vault import encrypt_credentials
+from api.services.integration_connectors import (
+    SlackServiceError,
+    list_slack_public_channels,
+)
 from api.services.integration_oauth import (
     build_slack_install_url,
     exchange_slack_oauth_code,
 )
+from api.services.integration_test_delivery import run_slack_test_delivery
 from api.services.webhook_dispatcher import replay_webhook_delivery
 from api.services.webhook_observability import (
     build_delivery_timeline,
@@ -428,6 +433,45 @@ class IntegrationViewSet(ModelViewSet):
 
         serializer = self.get_serializer(integration)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get"], url_path="slack/channels")
+    def slack_channels(self, request, pk=None):
+        membership = get_user_membership_or_raise(request.user)
+        require_write_role(membership)
+        integration = self.get_object()
+
+        try:
+            channels = list_slack_public_channels(integration)
+        except SlackServiceError as exc:
+            return Response({"detail": exc.message}, status=exc.status_code)
+
+        return Response({"channels": channels}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="slack/test")
+    def slack_test(self, request, pk=None):
+        membership = get_user_membership_or_raise(request.user)
+        require_write_role(membership)
+        integration = self.get_object()
+
+        request_channel = request.data.get("channel_id")
+        config_channel = (
+            integration.config.get("channel_id", "")
+            if isinstance(integration.config, dict)
+            else ""
+        )
+        channel_id = (
+            request_channel if isinstance(request_channel, str) else config_channel
+        )
+
+        try:
+            delivery = run_slack_test_delivery(integration, channel_id=channel_id)
+        except SlackServiceError as exc:
+            return Response({"detail": exc.message}, status=exc.status_code)
+
+        return Response(
+            {"accepted": True, "delivery_id": str(delivery.id)},
+            status=status.HTTP_200_OK,
+        )
 
 
 class TablePreferenceDetailView(APIView):

@@ -9,6 +9,8 @@ describe("permissions", () => {
     expect(permissions.canManageSavedViews).toBe(false);
     expect(permissions.canManageTablePreferences).toBe(false);
     expect(permissions.canRetryDecision).toBe(false);
+    expect(permissions.canReadIntegrations).toBe(false);
+    expect(permissions.canManageIntegrations).toBe(false);
   });
 
   it("allows read-only access for viewer", () => {
@@ -19,6 +21,8 @@ describe("permissions", () => {
     expect(permissions.canManageSavedViews).toBe(false);
     expect(permissions.canManageTablePreferences).toBe(false);
     expect(permissions.canRetryDecision).toBe(false);
+    expect(permissions.canReadIntegrations).toBe(true);
+    expect(permissions.canManageIntegrations).toBe(false);
   });
 
   it("allows mutation permissions for operator", () => {
@@ -28,5 +32,7 @@ describe("permissions", () => {
     expect(permissions.canManageSavedViews).toBe(true);
     expect(permissions.canManageTablePreferences).toBe(true);
     expect(permissions.canRetryDecision).toBe(true);
+    expect(permissions.canReadIntegrations).toBe(true);
+    expect(permissions.canManageIntegrations).toBe(true);
   });
 });

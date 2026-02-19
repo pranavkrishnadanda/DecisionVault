@@ -5,6 +5,8 @@ import {
   createIntegration,
   getSlackInstallUrl,
   listIntegrations,
+  listSlackChannels,
+  runSlackTestDelivery,
   testIntegrationDelivery,
   updateIntegration,
 } from "@/api/integrations";
@@ -212,6 +214,46 @@ describe("integrations api", () => {
     expect(result).toEqual({
       accepted: true,
       deliveryId: "delivery-2",
+    });
+  });
+
+  it("lists discoverable slack channels", async () => {
+    const apiFetchSpy = vi.spyOn(apiClient, "apiFetch").mockResolvedValue({
+      channels: [
+        { id: "COPS", name: "ops-alerts" },
+        { id: "CALERTS", name: "fraud-alerts" },
+      ],
+    });
+
+    const result = await listSlackChannels("int-2");
+
+    expect(apiFetchSpy).toHaveBeenCalledWith(
+      "/api/v1/integrations/int-2/slack/channels/",
+    );
+    expect(result).toEqual([
+      { id: "COPS", name: "ops-alerts" },
+      { id: "CALERTS", name: "fraud-alerts" },
+    ]);
+  });
+
+  it("submits real slack test delivery request", async () => {
+    const apiFetchSpy = vi.spyOn(apiClient, "apiFetch").mockResolvedValue({
+      accepted: true,
+      delivery_id: "delivery-9",
+    });
+
+    const result = await runSlackTestDelivery("int-2", "COPS");
+
+    expect(apiFetchSpy).toHaveBeenCalledWith(
+      "/api/v1/integrations/int-2/slack/test/",
+      {
+        method: "POST",
+        body: JSON.stringify({ channel_id: "COPS" }),
+      },
+    );
+    expect(result).toEqual({
+      accepted: true,
+      deliveryId: "delivery-9",
     });
   });
 });
