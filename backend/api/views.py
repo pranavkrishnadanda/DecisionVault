@@ -1,23 +1,27 @@
-import json
-
 from django.http import JsonResponse
-from rest_framework import status
+from rest_framework import mixins, status
+from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.viewsets import ModelViewSet
+from rest_framework.viewsets import GenericViewSet, ModelViewSet
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from api.models import WebhookSubscription
+from api.models import WebhookDelivery, WebhookSubscription
 from api.serializers import (
     OrganizationTokenObtainPairSerializer,
     RegisterSerializer,
     SavedViewSerializer,
     TablePreferenceSerializer,
+    WebhookDeliveryDetailSerializer,
+    WebhookDeliveryListSerializer,
     WebhookSubscriptionSerializer,
     inject_access_context_claims,
 )
+from api.services.webhook_dispatcher import replay_webhook_delivery
 from core.permissions import (
     get_user_membership_or_raise,
     require_read_role,
@@ -130,6 +134,55 @@ class WebhookSubscriptionViewSet(ModelViewSet):
         membership = get_user_membership_or_raise(self.request.user)
         require_write_role(membership)
         instance.delete()
+
+
+class WebhookDeliveryPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = "page_size"
+    max_page_size = 200
+
+
+class WebhookDeliveryViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    GenericViewSet,
+):
+    """Organization-scoped webhook delivery read/replay API."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = WebhookDeliveryListSerializer
+    pagination_class = WebhookDeliveryPagination
+    http_method_names = ["get", "post"]
+
+    def get_queryset(self):
+        membership = get_user_membership_or_raise(self.request.user)
+        require_read_role(membership)
+        queryset = WebhookDelivery.objects.select_related(
+            "organization", "subscription"
+        ).order_by("-created_at")
+        if self.action == "retrieve":
+            queryset = queryset.prefetch_related("attempts")
+        return scope_queryset_to_membership(queryset, membership)
+
+    def get_serializer_class(self):
+        if self.action == "retrieve":
+            return WebhookDeliveryDetailSerializer
+        return WebhookDeliveryListSerializer
+
+    @action(detail=True, methods=["post"], url_path="replay")
+    def replay(self, request, pk=None):
+        membership = get_user_membership_or_raise(request.user)
+        require_write_role(membership)
+        delivery = self.get_object()
+
+        if delivery.status != WebhookDelivery.Status.FAILED:
+            raise ValidationError({"status": "Only failed deliveries can be replayed."})
+
+        replay_webhook_delivery(delivery)
+        delivery.refresh_from_db()
+
+        serializer = WebhookDeliveryDetailSerializer(delivery)
+        return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
 
 
 class TablePreferenceDetailView(APIView):
