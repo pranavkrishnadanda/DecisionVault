@@ -4,7 +4,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from api.models import OrganizationMembership
 from decisions.models import DecisionStatus, SavedView, TableDensity, TablePreference
 
 User = get_user_model()
@@ -38,6 +40,28 @@ class RegisterSerializer(serializers.Serializer):
             password=validated_data["password"],
         )
         return user
+
+
+def inject_access_context_claims(token, user) -> None:
+    membership = (
+        OrganizationMembership.objects.select_related("organization")
+        .filter(user=user)
+        .order_by("created_at")
+        .first()
+    )
+    if membership is None:
+        return
+
+    token["organization_id"] = str(membership.organization_id)
+    token["role"] = membership.role
+
+
+class OrganizationTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        inject_access_context_claims(token, user)
+        return token
 
 
 class SavedViewSerializer(serializers.ModelSerializer):

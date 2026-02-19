@@ -7,11 +7,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from api.serializers import (
+    OrganizationTokenObtainPairSerializer,
     RegisterSerializer,
     SavedViewSerializer,
     TablePreferenceSerializer,
+    inject_access_context_claims,
 )
 from core.permissions import get_user_membership_or_raise, scope_queryset_to_membership
 from decisions.models import (
@@ -49,6 +52,7 @@ class RegisterView(APIView):
 
         user = serializer.save()
         refresh = RefreshToken.for_user(user)
+        inject_access_context_claims(refresh, user)
 
         return Response(
             {
@@ -79,6 +83,10 @@ class SavedViewViewSet(ModelViewSet):
     def perform_create(self, serializer):
         membership = get_user_membership_or_raise(self.request.user)
         serializer.save(user=self.request.user, organization=membership.organization)
+
+
+class OrganizationTokenObtainPairView(TokenObtainPairView):
+    serializer_class = OrganizationTokenObtainPairSerializer
 
 
 class TablePreferenceDetailView(APIView):
