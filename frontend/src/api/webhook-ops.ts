@@ -45,7 +45,9 @@ interface TimelineApiResponse {
 }
 
 export async function getWebhookMetrics(): Promise<WebhookMetrics> {
-  const data = await apiFetch<MetricsApiResponse>("/api/v1/webhook-deliveries/metrics/");
+  const data = await apiFetch<MetricsApiResponse>(
+    "/api/v1/webhook-deliveries/metrics/",
+  );
   return {
     deliverySuccessRate: data.delivery_success_rate,
     retryCount: data.retry_count,
