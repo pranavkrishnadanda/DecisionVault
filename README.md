@@ -1,6 +1,6 @@
 # DecisionVault Slack Integration
 
-Production-grade Slack OAuth + channel discovery + message history + test delivery for a multi-tenant SaaS app.
+Slack OAuth + channel discovery + message history + test delivery for a multi-tenant SaaS app.
 
 ## Stack
 - Backend: Django + httpx + cryptography (Fernet)
